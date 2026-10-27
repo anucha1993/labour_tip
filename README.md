@@ -1,0 +1,122 @@
+# Labour App — ระบบบริหารข้อมูลแรงงานต่างด้าว (The Importer 168)
+
+Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/bootstrap`)
+
+## การติดตั้ง / Deploy
+
+1. Document root ของเว็บเซิร์ฟเวอร์ควรชี้ที่โฟลเดอร์ `public/`
+   (ถ้าชี้ที่โฟลเดอร์โปรเจกต์ ไฟล์ `.htaccess` ที่ root จะส่งทุก request ไปที่ `public/` ให้อัตโนมัติ)
+2. หลังอัปโหลดโค้ดใหม่ให้รัน
+   ```bash
+   composer install --no-dev --optimize-autoloader   # หรือ composer dump-autoload (มี helpers ใน app/Support/helpers.php)
+   php artisan storage:link                          # ลิงก์ public/storage -> storage/app/public (ไฟล์เอกสารแรงงาน)
+   php artisan view:clear && php artisan config:clear && php artisan route:clear
+   ```
+3. ตั้งค่า `.env` (`APP_URL`, `DB_*`) และตั้ง `APP_DEBUG=false` บน production
+
+## สิทธิ์การใช้งาน (กำหนดใน `routes/web.php`)
+
+| สิทธิ์ | ทำอะไรได้ |
+|---|---|
+| Member | ดูข้อมูลทุกหน้า, ดาวน์โหลดรายงาน/Excel |
+| Admin | Member + เพิ่ม/แก้ไขแรงงาน บริษัท เอเจนซี่, นำเข้า Excel, Mass update, ตั้งค่าวันแจ้งเตือน |
+| MasterAdmin | Admin + ลบข้อมูล/ไฟล์, จัดการสมาชิก, ดูประวัติการแก้ไข |
+
+## โครงสร้างที่ควรรู้
+
+- `app/Services/ExpiryService.php` — ตรรกะ "เอกสารใกล้หมดอายุ" ที่ใช้ร่วมกันทั้ง dashboard, badge ใน sidebar และ Excel export
+- `app/Support/helpers.php` — ฟังก์ชันช่วย เช่น `fmt_date()`, `days_left()`, `status_job_label()`, `user_is()`
+- `resources/views/layouts/main_layout.blade.php` — โครงหน้าหลัก (sidebar/topbar), `layouts/app.blade.php` — หน้า login
+- `resources/views/components/` — Blade components (`x-form.input`, `x-form.select`, `x-days-left`, `x-status-badge`, ...)
+- `public/css/labour.css`, `public/js/labour.js` — ธีมและ behaviour ของระบบ (รองรับโหมดมืด)
+- `tests/Feature/PagesRenderTest.php` — smoke test เปิดทุกหน้า (อ่านจากฐานข้อมูลจริงที่ตั้งใน `.env`, ไม่มีการเขียน)
+
+---
+
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400"></a></p>
+
+<p align="center">
+<a href="https://travis-ci.org/laravel/framework"><img src="https://travis-ci.org/laravel/framework.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
+
+## About Laravel
+
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
+
+## Learning Laravel
+
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+
+If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 1500 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+
+## Laravel Sponsors
+
+We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+
+### Premium Partners
+
+- **[Vehikl](https://vehikl.com/)**
+- **[Tighten Co.](https://tighten.co)**
+- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
+- **[64 Robots](https://64robots.com)**
+- **[Cubet Techno Labs](https://cubettech.com)**
+- **[Cyber-Duck](https://cyber-duck.co.uk)**
+- **[Many](https://www.many.co.uk)**
+- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
+- **[DevSquad](https://devsquad.com)**
+- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
+- **[OP.GG](https://op.gg)**
+- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
+- **[Lendio](https://lendio.com)**
+
+## Contributing
+
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+
+## Code of Conduct
+
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+
+## Security Vulnerabilities
+
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+
+## License
+
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## ไฟล์เอกสารแรงงาน และ Cloudflare R2
+
+เอกสารของแรงงานเก็บในตาราง `labour_documents` (เพิ่มได้ไม่จำกัด ตั้งชื่อเอกสารเองได้) แต่ละแถวจำ `disk` ที่เก็บไฟล์ไว้
+จึงมีไฟล์อยู่บนเครื่อง (`public`) และบน R2 พร้อมกันได้ ไฟล์เดิมในคอลัมน์ `labour_file_*` ยังแสดงผลตามปกติแม้ยังไม่ migrate
+
+**ขั้นตอนย้ายไป R2 (ไม่กระทบไฟล์เดิม)**
+
+1. รัน `php artisan migrate` (สร้างตาราง `labour_documents`)
+2. สร้าง bucket + API token บน Cloudflare R2 แล้วตั้งค่าใน `.env`
+   ```
+   R2_ACCESS_KEY_ID=...
+   R2_SECRET_ACCESS_KEY=...
+   R2_BUCKET=labour-documents
+   R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+   ```
+3. ทดลองก่อน: `php artisan labour:migrate-documents --to=r2 --dry-run`
+4. คัดลอกจริง: `php artisan labour:migrate-documents --to=r2`
+   (ลงทะเบียนไฟล์เดิมลงตาราง แล้วคัดลอกขึ้น R2 ทีละไฟล์ ตรวจขนาดไฟล์ก่อนสลับ disk ไฟล์ต้นทางไม่ถูกลบ รันซ้ำได้)
+5. ตั้ง `LABOUR_DOCS_DISK=r2` ใน `.env` เพื่อให้ไฟล์ใหม่ขึ้น R2
+6. (เมื่อมั่นใจแล้ว) `php artisan labour:migrate-documents --to=r2 --delete-local` เพื่อลบสำเนาบนเครื่อง
+
+ไฟล์บน R2 เปิดผ่าน signed URL อายุ 15 นาที (bucket เป็น private) ส่วนไฟล์บนเครื่องส่งผ่านแอปจึงต้องล็อกอินก่อนเสมอ

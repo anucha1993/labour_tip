@@ -1,0 +1,6 @@
+# Fallback for hosts whose document root points at the project folder instead of /public.
+# Every request is forwarded to public/, so asset('...') URLs keep working either way.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
