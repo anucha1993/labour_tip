@@ -120,3 +120,15 @@ The Laravel framework is open-sourced software licensed under the [MIT license](
 6. (เมื่อมั่นใจแล้ว) `php artisan labour:migrate-documents --to=r2 --delete-local` เพื่อลบสำเนาบนเครื่อง
 
 ไฟล์บน R2 เปิดผ่าน signed URL อายุ 15 นาที (bucket เป็น private) ส่วนไฟล์บนเครื่องส่งผ่านแอปจึงต้องล็อกอินก่อนเสมอ
+
+## API สำหรับ Worker Portal (labour.importer168.com)
+
+โปรเจค `labour_portal` (แยกต่างหาก) ให้แรงงานล็อกอินด้วย **เลขที่ Passport + วันเกิด (ddmmyyyy)** เพื่อดูข้อมูลและไฟล์ของตนเอง
+โดยดึงข้อมูลจากระบบนี้ผ่าน `routes/api.php` (`/api/portal/*`) ซึ่งป้องกันด้วย header `X-Portal-Key`
+
+1. ตั้งค่า `PORTAL_API_KEY=<คีย์ยาวๆ>` ใน `.env` ของทั้งสองระบบ (ค่าเดียวกัน) แล้ว `php artisan config:clear`
+2. ไม่มี migration เพิ่ม — ใช้ตาราง `labour`, `labour_documents`, `company`, `settings` เดิม
+3. ไฟล์เอกสารถูกเปิดผ่านลิงก์ signed อายุ 15 นาที (`/portal-file/{labour}/{key}`) ไม่ต้องล็อกอิน admin
+
+โค้ดอยู่ที่ `app/Http/Controllers/api/PortalController.php`, `app/Services/Portal/WorkerProfile.php`, `app/Http/Middleware/VerifyPortalKey.php`
+ทดสอบ: `php artisan test --filter=PortalApiTest`

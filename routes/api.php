@@ -1,19 +1,18 @@
 <?php
 
-use Illuminate\Http\Request;
+use App\Http\Controllers\api\PortalController;
 use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| is assigned the "api" middleware group. Enjoy building your API!
-|
+| Consumed by the worker portal (labour.importer168.com). All routes require the
+| X-Portal-Key header (PORTAL_API_KEY in .env on both servers).
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
+Route::prefix('portal')->middleware('portal.key')->group(function () {
+    Route::post('/login', [PortalController::class, 'login'])->middleware('throttle:portal-login')->name('api.portal.login');
+    Route::get('/labours/{labourModel}', [PortalController::class, 'show'])->name('api.portal.show');
+    Route::get('/labours/{labourModel}/documents/{key}/link', [PortalController::class, 'documentLink'])->name('api.portal.documentLink');
 });

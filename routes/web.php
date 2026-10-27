@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActionLogController;
 use App\Http\Controllers\agency\AgencyController;
 use App\Http\Controllers\ai\AiChatController;
+use App\Http\Controllers\api\PortalController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\company\CompanyController;
 use App\Http\Controllers\ExportExcelExpire\LabourExpireDay90Controller;
@@ -34,6 +35,9 @@ use Illuminate\Support\Facades\Route;
 // Login / logout / password reset. Public self-registration is disabled;
 // new accounts are created by a MasterAdmin from the member page.
 Auth::routes(['register' => false, 'verify' => false]);
+
+// Worker portal downloads: temporary signed URLs issued by the portal API (no login, valid 15 minutes).
+Route::get('/portal-file/{labourModel}/{key}', [PortalController::class, 'file'])->middleware('signed')->name('portal.file');
 
 Route::middleware('auth')->group(function () {
 

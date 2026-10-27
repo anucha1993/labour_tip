@@ -59,5 +59,12 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
         });
+
+        // Worker portal login: the portal server forwards the worker's IP in X-Client-Ip.
+        RateLimiter::for('portal-login', function (Request $request) {
+            $who = strtoupper(trim((string) $request->input('passport'))) . '|' . ($request->header('X-Client-Ip') ?: $request->ip());
+
+            return Limit::perMinute(10)->by($who);
+        });
     }
 }
