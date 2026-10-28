@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiChatLog;
 use App\Models\labour\LabourModel;
 use App\Models\User;
 use App\Services\Ai\LabourQueryService;
@@ -37,6 +38,8 @@ class AiChatTest extends TestCase
         Schema::create('agency', function (Blueprint $t) { $t->increments('agency_id'); $t->string('agency_name'); $t->string('agency_nationality')->nullable(); });
         Schema::create('nationality', function (Blueprint $t) { $t->increments('id'); $t->string('code'); $t->string('name_th'); });
         Schema::create('settings', function (Blueprint $t) { $t->increments('set_id'); $t->string('set_name'); $t->integer('set_expire'); });
+        Schema::create('ai_chat_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('conversation_id')->nullable(); $t->text('question'); $t->text('answer')->nullable(); $t->text('tools_used')->nullable(); $t->text('reports')->nullable(); $t->integer('prompt_tokens')->default(0); $t->integer('completion_tokens')->default(0); $t->integer('duration_ms')->default(0); $t->string('status')->default('ok'); $t->text('error')->nullable(); $t->string('ip')->nullable(); $t->timestamp('created_at')->nullable(); });
+        Schema::create('users', function (Blueprint $t) { $t->increments('id'); $t->string('name'); $t->string('email')->nullable(); $t->string('password')->nullable(); $t->string('type')->nullable(); $t->string('status')->nullable(); $t->timestamps(); });
         Schema::create('action_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('action_type'); $t->string('model_type'); $t->unsignedBigInteger('model_id'); $t->text('old_values')->nullable(); $t->text('new_values')->nullable(); $t->timestamp('created_at')->nullable(); });
 
         DB::table('nationality')->insert([['code' => 'myanmar', 'name_th' => 'พม่า'], ['code' => 'cambodia', 'name_th' => 'กัมพูชา']]);
@@ -56,12 +59,41 @@ class AiChatTest extends TestCase
         Storage::fake('local');
     }
 
-    private function user(): User
+    private function user(string $type = 'Member'): User
     {
-        $u = new User(['name' => 'Tester', 'email' => 't@test.local', 'type' => 'Member', 'status' => 'enable']);
+        $u = new User(['name' => 'Tester', 'email' => 't@test.local', 'type' => $type, 'status' => 'enable']);
         $u->id = 7;
 
         return $u;
+    }
+
+    public function test_every_exchange_is_logged_and_master_admin_can_browse_it()
+    {
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'c1', 'type' => 'function', 'function' => ['name' => 'count_labours', 'arguments' => '{}']]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'มีทั้งหมด **4 คน**']))
+            ->push(['error' => ['message' => 'boom']], 500),
+        ]);
+        DB::table('users')->insert(['id' => 7, 'name' => 'Tester', 'type' => 'Member']);
+
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'มีแรงงานกี่คน', 'conversation' => 'abc-123'])->assertOk();
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'คำถามที่พัง', 'conversation' => 'abc-123'])->assertStatus(502);
+
+        $this->assertDatabaseCount('ai_chat_logs', 2);
+        $ok = AiChatLog::where('status', 'ok')->first();
+        $this->assertSame(['user_id' => 7, 'conversation_id' => 'abc-123', 'question' => 'มีแรงงานกี่คน', 'tools' => ['count_labours'], 'tokens' => 30],
+            ['user_id' => $ok->user_id, 'conversation_id' => $ok->conversation_id, 'question' => $ok->question, 'tools' => $ok->tools_used, 'tokens' => $ok->totalTokens()]);
+        $this->assertStringContainsString('4 คน', $ok->answer);
+        $this->assertSame('error', AiChatLog::where('question', 'คำถามที่พัง')->value('status'));
+
+        // Members cannot see the log page; MasterAdmin can, with filters.
+        $this->actingAs($this->user())->get(route('ai.logs'))->assertRedirect(route('dashboard'));
+        $master = $this->user('MasterAdmin');
+        $this->actingAs($master)->get(route('ai.logs'))->assertOk()->assertSee('มีแรงงานกี่คน')->assertSee('คำถามที่พัง');
+        $this->actingAs($master)->get(route('ai.logs', ['status' => 'error']))->assertOk()->assertSee('คำถามที่พัง')->assertDontSee('มีแรงงานกี่คน');
+        $this->actingAs($master)->get(route('ai.logs', ['tool' => 'count_labours']))->assertOk()->assertSee('มีแรงงานกี่คน');
+        $this->actingAs($master)->get(route('ai.logs', ['search' => 'ไม่มีคำนี้']))->assertOk()->assertSee('ยังไม่มีประวัติการถาม AI');
     }
 
     private function openAiReply(array $message): array

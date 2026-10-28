@@ -65,7 +65,7 @@
             <a href="{{ route('report.index') }}" class="sb-link {{ request()->routeIs('report.*') ? 'active' : '' }}">
                 <i class="mdi mdi-file-chart"></i><span class="label">รายงาน</span>
             </a>
-            <a href="{{ route('ai.chat') }}" class="sb-link {{ request()->routeIs('ai.*') ? 'active' : '' }}">
+            <a href="{{ route('ai.chat') }}" class="sb-link {{ request()->routeIs('ai.chat') ? 'active' : '' }}">
                 <i class="mdi mdi-robot"></i><span class="label">ผู้ช่วย AI</span>
                 <span class="badge-soft badge-soft-primary" style="font-size:.62rem">ใหม่</span>
             </a>
@@ -83,11 +83,14 @@
                 <a href="{{ route('action-logs.index') }}" class="sb-link {{ request()->routeIs('action-logs.*') ? 'active' : '' }}">
                     <i class="mdi mdi-history"></i><span class="label">ประวัติการแก้ไข</span>
                 </a>
+                <a href="{{ route('ai.logs') }}" class="sb-link {{ request()->routeIs('ai.logs') ? 'active' : '' }}">
+                    <i class="mdi mdi-robot-outline"></i><span class="label">ประวัติการใช้ AI</span>
+                </a>
             @endif
         </nav>
 
         <div class="sb-user">
-            <span class="avatar">{{ $initials }}</span>
+            <a href="{{ route('profile.edit') }}" class="text-reset" title="โปรไฟล์ของฉัน"><x-avatar :user="$user" :size="36" /></a>
             <div class="meta">
                 <div class="n" title="{{ $user->name ?? '' }}">{{ $user->name ?? '' }}</div>
                 <div class="r">{{ role_label($user->type ?? '') }}</div>
@@ -113,7 +116,7 @@
 
             <div class="dropdown">
                 <button class="btn btn-soft d-flex align-items-center gap-2 py-1 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="avatar" style="width:30px;height:30px;font-size:.75rem">{{ $initials }}</span>
+                    <x-avatar :user="$user" :size="30" />
                     <span class="d-none d-md-inline" style="max-width:160px;overflow:hidden;text-overflow:ellipsis">{{ $user->name ?? '' }}</span>
                     <i class="mdi mdi-chevron-down"></i>
                 </button>
@@ -124,6 +127,7 @@
                         <span class="badge-soft badge-soft-primary mt-1 d-inline-block">{{ role_label($user->type ?? '') }}</span>
                     </li>
                     <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="mdi mdi-account-circle"></i> โปรไฟล์ของฉัน</a></li>
                     <li>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf

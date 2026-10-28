@@ -143,6 +143,7 @@ a:hover { text-decoration: underline; }
   background: var(--brand-100); color: var(--brand-700); font-weight: 700; font-size: .85rem;
 }
 .avatar-lg { width: 64px; height: 64px; font-size: 1.4rem; }
+.avatar-img { object-fit: cover; background: var(--surface-2); border: 1px solid var(--border); }
 
 /* collapsed (desktop) */
 @media (min-width: 992px) {

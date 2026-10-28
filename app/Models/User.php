@@ -23,6 +23,7 @@ class User extends Authenticatable
         'password',
         'type',
         'status',
+        'avatar',
     ];
 
     /**
@@ -43,4 +44,10 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
     ];
+
+    /** Public URL of the profile picture, or null when the user has none. */
+    public function avatarUrl(): ?string
+    {
+        return \App\Services\AvatarService::url($this->avatar ?? null);
+    }
 }

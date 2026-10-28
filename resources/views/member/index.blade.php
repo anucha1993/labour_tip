@@ -43,7 +43,7 @@
                             <td class="text-3">{{ $users->firstItem() + $i }}</td>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="avatar" style="width:32px;height:32px;font-size:.75rem">{{ mb_strtoupper(mb_substr($u->name, 0, 1)) }}</span>
+                                    <x-avatar :user="$u" :size="32" />
                                     <div>
                                         <div class="fw-name">{{ $u->name }}</div>
                                         @if ($u->id === auth()->id())<div class="sub">บัญชีของคุณ</div>@endif

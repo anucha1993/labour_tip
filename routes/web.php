@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActionLogController;
 use App\Http\Controllers\agency\AgencyController;
 use App\Http\Controllers\ai\AiChatController;
+use App\Http\Controllers\ai\AiChatLogController;
 use App\Http\Controllers\api\PortalController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\company\CompanyController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\labour\LabourController;
 use App\Http\Controllers\labour\LabourDocumentController;
 use App\Http\Controllers\labour\labourMassUpdateController;
 use App\Http\Controllers\member\AuthController;
+use App\Http\Controllers\member\ProfileController;
 use App\Http\Controllers\notification\NotificationController;
 use App\Http\Controllers\PDF\labourCustomController;
 use App\Http\Controllers\PDF\LabourCustomDateController;
@@ -45,6 +47,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('dashboard');
     Route::get('/home', fn () => redirect()->route('dashboard'))->name('home');
     Route::get('/totalnotify', [NotificationController::class, 'notify'])->name('dashboard.notify');
+
+    // ---------------------------------------------------------------- My profile (name, password, picture)
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])->name('profile.avatar');
+    Route::delete('/profile/avatar', [ProfileController::class, 'destroyAvatar'])->name('profile.avatar.delete');
 
     // ---------------------------------------------------------------- Labour (read)
     Route::get('/labour', [LabourController::class, 'index'])->name('labour.index');
@@ -131,5 +139,6 @@ Route::middleware('auth')->group(function () {
 
         // Audit trail
         Route::get('/action-logs', [ActionLogController::class, 'index'])->name('action-logs.index');
+        Route::get('/ai-chat/logs', [AiChatLogController::class, 'index'])->name('ai.logs');
     });
 });

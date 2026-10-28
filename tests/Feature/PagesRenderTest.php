@@ -29,7 +29,7 @@ class PagesRenderTest extends TestCase
 
     public function test_guest_is_redirected_to_login()
     {
-        foreach (['/', '/labour', '/company', '/agency', '/Report', '/settings', '/member', '/action-logs'] as $url) {
+        foreach (['/', '/labour', '/company', '/agency', '/Report', '/settings', '/member', '/action-logs', '/profile', '/ai-chat/logs'] as $url) {
             $this->get($url)->assertRedirect(route('login'));
         }
         $this->get('/login')->assertOk()->assertSee('เข้าสู่ระบบ');
@@ -48,6 +48,7 @@ class PagesRenderTest extends TestCase
             '/agency', '/agency/form-add',
             '/Report', '/settings',
             '/member', '/register', '/action-logs', '/action-logs?search=a&action=updated',
+            '/profile', '/ai-chat/logs', '/ai-chat/logs?search=a&status=ok',
         ];
         foreach ($pages as $url) {
             $this->get($url)->assertOk();

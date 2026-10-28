@@ -20,7 +20,7 @@
         </div>
     @endif
 
-    <div class="card chat-wrap" id="chatWrap" data-endpoint="{{ route('ai.message') }}" data-user="{{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}" data-configured="{{ $configured ? 1 : 0 }}">
+    <div class="card chat-wrap" id="chatWrap" data-endpoint="{{ route('ai.message') }}" data-user="{{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}" data-avatar="{{ auth()->user()->avatarUrl() ?? '' }}" data-configured="{{ $configured ? 1 : 0 }}">
         <div class="chat-log" id="chatLog">
             <div class="chat-empty" id="chatEmpty">
                 <div class="big"><i class="mdi mdi-robot"></i></div>
@@ -48,10 +48,18 @@
 (function () {
     var wrap = document.getElementById('chatWrap'), log = document.getElementById('chatLog'), form = document.getElementById('chatForm');
     var input = document.getElementById('chatText'), send = document.getElementById('chatSend'), empty = document.getElementById('chatEmpty');
-    var endpoint = wrap.dataset.endpoint, userInitial = wrap.dataset.user, configured = wrap.dataset.configured === '1';
+    var endpoint = wrap.dataset.endpoint, userInitial = wrap.dataset.user, userAvatar = wrap.dataset.avatar || '', configured = wrap.dataset.configured === '1';
     var KEY = 'labour-ai-chat';
     var history = [];
     try { history = JSON.parse(sessionStorage.getItem(KEY) || '[]'); } catch (e) { history = []; }
+    // Conversation id groups the turns of this tab for the admin log page.
+    var convo = '';
+    try { convo = sessionStorage.getItem(KEY + ':convo') || ''; } catch (e) {}
+    function newConvo() {
+        convo = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+        try { sessionStorage.setItem(KEY + ':convo', convo); } catch (e) {}
+    }
+    if (!convo) newConvo();
 
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
     function render(md) {
@@ -72,7 +80,7 @@
         (reports || []).forEach(function (r) {
             reportHtml += '<div><a class="report-chip" href="' + esc(r.download_url) + '" data-no-loader><i class="mdi mdi-file-excel"></i>' + esc(r.title) + ' · ' + esc(r.rows) + ' แถว' + (r.truncated ? ' (ตัดที่ 5,000)' : '') + ' <i class="mdi mdi-download"></i></a></div>';
         });
-        el.innerHTML = '<span class="avatar">' + (role === 'user' ? esc(userInitial) : '<i class="mdi mdi-robot"></i>') + '</span>' +
+        el.innerHTML = (role === 'user' && userAvatar ? '<img class="avatar avatar-img" src="' + esc(userAvatar) + '" alt="">' : '<span class="avatar">' + (role === 'user' ? esc(userInitial) : '<i class="mdi mdi-robot"></i>') + '</span>') +
             '<div><div class="msg-body">' + (role === 'user' ? esc(content).replace(/\n/g, '<br>') : render(content)) + reportHtml + '</div>' +
             '<div class="msg-meta">' + esc(meta || time()) + '</div></div>';
         log.appendChild(el);
@@ -103,7 +111,7 @@
             var res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
-                body: JSON.stringify({ message: text, history: history.slice(0, -1).slice(-20).map(function (m) { return { role: m.role, content: m.content }; }) })
+                body: JSON.stringify({ message: text, conversation: convo, history: history.slice(0, -1).slice(-20).map(function (m) { return { role: m.role, content: m.content }; }) })
             });
             var data = await res.json().catch(function () { return {}; });
             document.getElementById('chatTyping') && document.getElementById('chatTyping').remove();
@@ -129,7 +137,7 @@
     form.addEventListener('submit', function (e) { e.preventDefault(); ask(input.value); });
     document.querySelectorAll('[data-suggest]').forEach(function (b) { b.addEventListener('click', function () { ask(b.textContent); }); });
     document.getElementById('chatClear').addEventListener('click', function () {
-        history = []; save();
+        history = []; save(); newConvo();
         log.querySelectorAll('.msg').forEach(function (m) { m.remove(); });
         if (empty) empty.style.display = '';
         input.focus();
