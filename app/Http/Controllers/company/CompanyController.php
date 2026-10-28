@@ -129,7 +129,7 @@ class CompanyController extends Controller
     {
         $google = app(\App\Services\GoogleTranslate::class);
         $todo = [];
-        foreach (['company_name' => 'company_name_en', 'company_address' => 'company_address_en'] as $th => $en) {
+        foreach (['company_name' => 'company_name_en', 'company_address' => 'company_address_en', 'company_type' => 'company_type_en'] as $th => $en) {
             $data[$en] = trim((string) ($data[$en] ?? ''));
             if ($data[$en] !== '') {
                 continue;
@@ -151,7 +151,7 @@ class CompanyController extends Controller
                 \Illuminate\Support\Facades\Log::warning('Company auto-translate failed', ['error' => $e->getMessage()]);
             }
         }
-        foreach (['company_name_en', 'company_address_en'] as $en) {
+        foreach (['company_name_en', 'company_address_en', 'company_type_en'] as $en) {
             if ($data[$en] === '') {
                 $data[$en] = null;
             }
@@ -182,6 +182,7 @@ class CompanyController extends Controller
             'company_contact4' => ['nullable', 'string', 'max:100'],
             'company_contact5' => ['nullable', 'string', 'max:100'],
             'company_type' => ['required', 'string', 'max:100'],
+            'company_type_en' => ['nullable', 'string', 'max:100'],
             'company_contact_sale' => ['required', 'string', 'max:100'],
             'company_note' => ['nullable', 'string', 'max:5000'],
             'company_status' => ['required', Rule::in(['enable', 'disable'])],

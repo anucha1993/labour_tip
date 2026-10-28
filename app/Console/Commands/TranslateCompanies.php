@@ -30,7 +30,8 @@ class TranslateCompanies extends Command
         if (! $this->option('force')) {
             $query->where(function ($q) {
                 $q->whereNull('company_name_en')->orWhere('company_name_en', '')
-                    ->orWhereNull('company_address_en')->orWhere('company_address_en', '');
+                    ->orWhereNull('company_address_en')->orWhere('company_address_en', '')
+                    ->orWhereNull('company_type_en')->orWhere('company_type_en', '');
             });
         }
         $companies = $query->get();
@@ -47,6 +48,7 @@ class TranslateCompanies extends Command
             foreach ($chunk as $c) {
                 $texts[] = $this->option('force') || blank($c->company_name_en) ? (string) $c->company_name : '';
                 $texts[] = $this->option('force') || blank($c->company_address_en) ? (string) $c->company_address : '';
+                $texts[] = $this->option('force') || blank($c->company_type_en) ? (string) $c->company_type : '';
             }
             try {
                 $en = $google->translate($texts);
@@ -59,12 +61,16 @@ class TranslateCompanies extends Command
             foreach ($chunk as $c) {
                 $name = $en[$i++];
                 $addr = $en[$i++];
+                $type = $en[$i++];
                 $update = [];
                 if ($name !== '') {
                     $update['company_name_en'] = mb_substr($name, 0, 255);
                 }
                 if ($addr !== '') {
                     $update['company_address_en'] = mb_substr($addr, 0, 255);
+                }
+                if ($type !== '') {
+                    $update['company_type_en'] = mb_substr($type, 0, 100);
                 }
                 if ($update) {
                     $c->forceFill($update)->saveQuietly();

@@ -74,6 +74,7 @@ class CompanyTranslateTest extends TestCase
         $c = CompanyModel::first();
         $this->assertSame('EN:บริษัท แลบ โฟร์ทีน จำกัด', $c->company_name_en);
         $this->assertSame('EN:362/10-11 ถนนสี่พระยา', $c->company_address_en);
+        $this->assertSame('EN:โรงงาน', $c->company_type_en);
         Http::assertSentCount(1);
 
         // Hand-typed English wins and is not sent to Google.

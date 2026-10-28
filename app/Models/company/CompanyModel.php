@@ -32,6 +32,7 @@ class CompanyModel extends Model
         'company_contact4',
         'company_contact5',
         'company_type',
+        'company_type_en',
         'company_contact_sale',
         'company_note',
         'company_status',

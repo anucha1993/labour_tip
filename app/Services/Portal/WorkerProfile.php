@@ -219,6 +219,7 @@ class WorkerProfile
             'name' => (string) $c->company_name,
             'name_en' => trim((string) $c->company_name_en),
             'type' => (string) $c->company_type,
+            'type_en' => trim((string) $c->company_type_en),
             'phone' => (string) $c->company_phone,
             'contact' => (string) $c->company_contact,
             'address' => [

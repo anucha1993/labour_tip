@@ -20,6 +20,7 @@
         <x-form.input wrapper="col-lg-6" name="company_name_en" label="ชื่อภาษาอังกฤษ (แสดงใน Worker App)" :value="$company->company_name_en" placeholder="เว้นว่างให้ระบบแปลอัตโนมัติ" help="เว้นว่าง = Google แปลให้ตอนบันทึก แก้เองได้ภายหลัง" />
         <x-form.input wrapper="col-sm-6 col-lg-3" name="company_tax" label="เลขทะเบียนบริษัท" :value="$company->company_tax" required class="text-mono" />
         <x-form.input wrapper="col-sm-6 col-lg-3" name="company_type" label="ประเภทกิจการ" :value="$company->company_type" required placeholder="เช่น ก่อสร้าง, โรงงาน" />
+        <x-form.input wrapper="col-sm-6 col-lg-3" name="company_type_en" label="ประเภทกิจการ (อังกฤษ)" :value="$company->company_type_en" placeholder="เว้นว่างให้ระบบแปล" />
     </div>
 </x-form.card>
 
