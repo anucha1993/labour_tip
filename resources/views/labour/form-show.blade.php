@@ -43,7 +43,7 @@
                     <span><i class="mdi mdi-earth"></i> {{ $nationalityName }}</span>
                     <span>·</span>
                     <span>{{ sex_label($labour->labour_sex) }}</span>
-                    @if ($labour->labour_birthday)<span>·</span><span>เกิด {{ fmt_date($labour->labour_birthday) }} ({{ age_text($labour->labour_birthday) }})</span>@endif
+                    @if (! is_blank_date($labour->labour_birthday))<span>·</span><span>เกิด {{ fmt_date($labour->labour_birthday) }} ({{ age_text($labour->labour_birthday) }})</span><span>·</span><span title="รหัสผ่านสำหรับ Worker App (วันเกิด ddmmyyyy)">รหัส Worker App <code>{{ fmt_date($labour->labour_birthday, 'dmY') }}</code></span>@endif
                     @if ($labour->labour_number)<span>·</span><span>รหัส {{ $labour->labour_number }}</span>@endif
                 </div>
             </div>

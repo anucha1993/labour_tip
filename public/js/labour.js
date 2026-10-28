@@ -179,6 +179,22 @@
       on(input, 'change', render);
       render();
     });
+    // The browser shows <input type="date"> in its own locale (often mm/dd/yyyy), so spell the
+    // date out in Thai and show the Worker App password (ddmmyyyy) that follows from it.
+    var thMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    $$('[data-birthday-hint]').forEach(function (out) {
+      var input = $(out.dataset.birthdayHint);
+      if (!input) return;
+      var render = function () {
+        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(input.value || '');
+        if (!m) { out.textContent = ''; return; }
+        out.innerHTML = 'เกิดวันที่ <b>' + parseInt(m[3], 10) + ' ' + thMonths[parseInt(m[2], 10) - 1] + ' ' + m[1] + '</b>' +
+          ' · รหัสผ่าน Worker App: <code>' + m[3] + m[2] + m[1] + '</code>';
+      };
+      on(input, 'change', render);
+      on(input, 'input', render);
+      render();
+    });
   }
 
   // Labour form: show the resign/escape date box that matches the chosen status.

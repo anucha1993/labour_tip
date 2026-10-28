@@ -2,6 +2,8 @@
 
 namespace App\Services\Ai;
 
+use App\Models\labour\LabourDocument;
+use App\Models\labour\LabourModel;
 use App\Services\ExpiryService;
 use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
@@ -316,8 +318,26 @@ class LabourQueryService
         }
         $out['id'] = $r->labour_id;
         $out['url'] = route('labour.show', $r->labour_id);
+        $out['เอกสารไฟล์'] = $this->documentsOf((int) $r->labour_id);
 
         return $out;
+    }
+
+    /** Uploaded files (labour_documents rows + legacy labour_file_* columns) with links the user can open. */
+    private function documentsOf(int $labourId): array
+    {
+        $labour = LabourModel::find($labourId);
+        if (! $labour) {
+            return [];
+        }
+
+        return $labour->documentList()->map(fn (LabourDocument $d) => [
+            'ชื่อเอกสาร' => $d->name,
+            'ไฟล์' => $d->fileName(),
+            'ขนาด' => $d->humanSize(),
+            'มีไฟล์อยู่จริง' => $d->exists(),
+            'open_url' => $d->id ? route('labour.document.open', $d->id) : route('labour.document.openLegacy', [$labourId, $d->legacy_column]),
+        ])->values()->all();
     }
 
     private function str(array $f, string $key): ?string

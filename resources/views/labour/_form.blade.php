@@ -24,7 +24,10 @@
         <x-form.select wrapper="col-6 col-lg-2" name="labour_sex" label="เพศ" :value="$labour->labour_sex === 'man' ? 'male' : $labour->labour_sex" required :options="['male' => 'ชาย', 'female' => 'หญิง']" />
         <x-form.select wrapper="col-lg-2" name="labour_nationality" label="สัญชาติ" :value="$labour->labour_nationality" required placeholder="เลือก" :options="$nationalityOptions" />
 
-        <x-form.input wrapper="col-sm-6 col-lg-3" name="labour_birthday" type="date" label="วันเกิด" :value="$labour->labour_birthday" />
+        <div class="col-sm-6 col-lg-3">
+            <x-form.input name="labour_birthday" type="date" label="วันเกิด" :value="$labour->labour_birthday" />
+            <div class="form-text" data-birthday-hint="#labour_birthday"></div>
+        </div>
         <div class="col-sm-6 col-lg-2">
             <label class="form-label" for="age_year">อายุ</label>
             <input type="text" id="age_year" class="form-control" readonly data-age-for="#labour_birthday" placeholder="-">

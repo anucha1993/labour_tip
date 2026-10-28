@@ -197,7 +197,7 @@ class LabourAssistant
             $fn('get_expiry_summary', 'สรุปจำนวนเอกสารใกล้หมดอายุแต่ละประเภทตามค่าแจ้งเตือนของระบบ', $empty),
             $fn('search_labours', 'ค้นหารายชื่อแรงงานตามเงื่อนไข คืนค่า total และรายการ (จำกัดจำนวนแถว) ใช้เมื่อต้องการรายชื่อ', ['type' => 'object', 'properties' => ['filters' => $filters]]),
             $fn('count_labours', 'นับจำนวนแรงงานตามเงื่อนไข เลือก group_by เพื่อสรุปยอดแยกกลุ่มได้', ['type' => 'object', 'properties' => ['filters' => $filters, 'group_by' => ['type' => 'string', 'enum' => array_keys(LabourQueryService::GROUP_FIELDS)]]]),
-            $fn('get_labour_detail', 'ดูข้อมูลแรงงานรายคนแบบละเอียดจากชื่อหรือเลขพาสปอร์ต', ['type' => 'object', 'properties' => ['query' => ['type' => 'string']], 'required' => ['query']]),
+            $fn('get_labour_detail', 'ดูข้อมูลแรงงานรายคนแบบละเอียดจากชื่อหรือเลขพาสปอร์ต รวมรายการไฟล์เอกสารที่อัปโหลดไว้ (พาสปอร์ต วีซ่า ใบอนุญาตทำงาน ฯลฯ) พร้อม open_url สำหรับเปิดไฟล์', ['type' => 'object', 'properties' => ['query' => ['type' => 'string']], 'required' => ['query']]),
             $fn('list_companies', 'รายชื่อบริษัท/นายจ้าง พร้อมจำนวนแรงงาน', ['type' => 'object', 'properties' => ['keyword' => ['type' => 'string']]]),
             $fn('list_agencies', 'รายชื่อเอเจนซี่ พร้อมสัญชาติและจำนวนแรงงาน', $empty),
             $fn('create_excel_report', 'สร้างไฟล์ Excel รายงานแรงงานตามเงื่อนไข (สูงสุด ' . LabourQueryService::MAX_EXPORT_ROWS . ' แถว) คืน download_url ให้ผู้ใช้ ใช้เมื่อผู้ใช้ขอไฟล์/รายงาน/Excel/ดาวน์โหลด', [
@@ -230,6 +230,7 @@ class LabourAssistant
 5. ถ้าคำถามกำกวม (เช่น ไม่รู้ว่าหมายถึงเอกสารประเภทไหน) ให้ถามกลับสั้นๆ ก่อน
 6. ไม่ทำรายการแก้ไข/ลบข้อมูล และไม่เปิดเผยข้อมูลที่ไม่ได้มาจากเครื่องมือ
 7. สถานะการทำงาน: job=ทำงาน, resign=ลาออก, escape=หลบหนี  สถานะในระบบ: enable=เปิดใช้งาน, disable=ปิดใช้งาน
+8. เมื่อถามถึงไฟล์เอกสาร (PDF/รูป พาสปอร์ต วีซ่า ใบอนุญาตทำงาน) ให้เรียก get_labour_detail แล้วดูช่อง "เอกสารไฟล์" ตอบเป็นรายการ [ชื่อเอกสาร – ชื่อไฟล์](open_url) ถ้ารายการว่างให้บอกว่ายังไม่มีไฟล์อัปโหลดในระบบ
 
 คอลัมน์ที่ใช้ใน Excel ได้: {$columns}
 PROMPT;
