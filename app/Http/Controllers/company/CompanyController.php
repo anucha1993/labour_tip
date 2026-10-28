@@ -78,7 +78,7 @@ class CompanyController extends Controller
 
     public function store(Request $request)
     {
-        $data = $this->validated($request);
+        $data = $this->fillEnglish($this->validated($request));
         $data['created_by'] = $request->user()->name;
 
         $company = CompanyModel::create($data);
@@ -98,7 +98,7 @@ class CompanyController extends Controller
 
     public function update(Request $request, CompanyModel $companyModel)
     {
-        $data = $this->validated($request);
+        $data = $this->fillEnglish($this->validated($request), $companyModel);
         $data['updated_by'] = $request->user()->name;
 
         $companyModel->update($data);
@@ -121,12 +121,53 @@ class CompanyController extends Controller
 
     // ------------------------------------------------------------------ helpers
 
+    /**
+     * English name/street line for the Worker App: keep what the user typed; when blank, ask Google
+     * (only if the Thai text is new or changed, so an unchanged company costs no API call).
+     */
+    private function fillEnglish(array $data, ?CompanyModel $existing = null): array
+    {
+        $google = app(\App\Services\GoogleTranslate::class);
+        $todo = [];
+        foreach (['company_name' => 'company_name_en', 'company_address' => 'company_address_en'] as $th => $en) {
+            $data[$en] = trim((string) ($data[$en] ?? ''));
+            if ($data[$en] !== '') {
+                continue;
+            }
+            $unchanged = $existing && trim((string) $existing->{$th}) === trim((string) $data[$th]) && filled($existing->{$en});
+            if ($unchanged) {
+                $data[$en] = $existing->{$en};
+            } elseif ($google->isConfigured()) {
+                $todo[$en] = (string) $data[$th];
+            }
+        }
+        if ($todo) {
+            try {
+                $translated = $google->translate(array_values($todo));
+                foreach (array_keys($todo) as $i => $en) {
+                    $data[$en] = mb_substr($translated[$i] ?? '', 0, 255);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Company auto-translate failed', ['error' => $e->getMessage()]);
+            }
+        }
+        foreach (['company_name_en', 'company_address_en'] as $en) {
+            if ($data[$en] === '') {
+                $data[$en] = null;
+            }
+        }
+
+        return $data;
+    }
+
     private function validated(Request $request): array
     {
         return $request->validate([
             'company_name' => ['required', 'string', 'max:255'],
+            'company_name_en' => ['nullable', 'string', 'max:255'],
             'company_tax' => ['required', 'string', 'max:255'],
             'company_address' => ['required', 'string', 'max:255'],
+            'company_address_en' => ['nullable', 'string', 'max:255'],
             'company_province' => ['required', 'string', 'max:255'],
             'company_amphur' => ['required', 'string', 'max:255'],
             'company_district' => ['required', 'string', 'max:255'],

@@ -17,6 +17,7 @@
 <x-form.card id="sec-company" icon="mdi-domain" title="ข้อมูลบริษัท" subtitle="ชื่อและทะเบียนนิติบุคคลของนายจ้าง">
     <div class="row g-3">
         <x-form.input wrapper="col-lg-6" name="company_name" label="ชื่อบริษัท / ชื่อนายจ้าง" :value="$company->company_name" required />
+        <x-form.input wrapper="col-lg-6" name="company_name_en" label="ชื่อภาษาอังกฤษ (แสดงใน Worker App)" :value="$company->company_name_en" placeholder="เว้นว่างให้ระบบแปลอัตโนมัติ" help="เว้นว่าง = Google แปลให้ตอนบันทึก แก้เองได้ภายหลัง" />
         <x-form.input wrapper="col-sm-6 col-lg-3" name="company_tax" label="เลขทะเบียนบริษัท" :value="$company->company_tax" required class="text-mono" />
         <x-form.input wrapper="col-sm-6 col-lg-3" name="company_type" label="ประเภทกิจการ" :value="$company->company_type" required placeholder="เช่น ก่อสร้าง, โรงงาน" />
     </div>
@@ -24,7 +25,8 @@
 
 <x-form.card id="sec-address" icon="mdi-map-marker" title="ที่อยู่" subtitle="เลือกจังหวัดก่อน ระบบจะโหลดอำเภอ ตำบล และรหัสไปรษณีย์ให้" color="info">
     <div class="row g-3">
-        <x-form.input wrapper="col-12" name="company_address" label="ที่อยู่ (บ้านเลขที่ หมู่ ซอย ถนน)" :value="$company->company_address" required />
+        <x-form.input wrapper="col-lg-6" name="company_address" label="ที่อยู่ (บ้านเลขที่ หมู่ ซอย ถนน)" :value="$company->company_address" required />
+        <x-form.input wrapper="col-lg-6" name="company_address_en" label="ที่อยู่ภาษาอังกฤษ (แสดงใน Worker App)" :value="$company->company_address_en" placeholder="เว้นว่างให้ระบบแปลอัตโนมัติ" />
         <div class="col-sm-6 col-lg-3">
             <label class="form-label required" for="company_province">จังหวัด</label>
             <select name="company_province" id="company_province" class="form-select js-select2 @error('company_province') is-invalid @enderror" data-placeholder="เลือกจังหวัด" required>

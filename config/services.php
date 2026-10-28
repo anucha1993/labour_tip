@@ -35,6 +35,10 @@ return [
         'key' => env('PORTAL_API_KEY'),
     ],
 
+    'google' => [
+        'translate_key' => env('GOOGLE_TRANSLATE_API_KEY'),
+    ],
+
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),

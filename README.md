@@ -31,6 +31,13 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
   กด "บทสนทนา" เพื่อดูทั้งบทสนทนาเรียงตามลำดับ, สรุปผู้ที่ถามมากที่สุด 30 วัน
 - ต้องรัน `php artisan migrate` หนึ่งครั้งเพื่อสร้างตาราง `ai_chat_logs` (ถ้าตารางยังไม่มี การบันทึกจะถูกข้ามและเขียน warning ลง log แต่แชทยังใช้ได้)
 
+## ชื่อ/ที่อยู่บริษัทภาษาอังกฤษ (สำหรับ Worker App)
+
+- ตาราง `company` มี `company_name_en` และ `company_address_en` (migration `2026_10_28_000004`) แก้ได้ในฟอร์มบริษัท
+- เว้นว่างไว้ ระบบจะเรียก Google Translate ตอนบันทึก (`app/Services/GoogleTranslate.php`, key `GOOGLE_TRANSLATE_API_KEY` ใน `.env`) ถ้า Google ล้มเหลวก็ยังบันทึกได้ แค่ช่องอังกฤษว่าง
+- เติมให้บริษัทเก่าทั้งหมดครั้งเดียวด้วย `php artisan company:translate` (`--force` = แปลทับทั้งหมด)
+- Worker App แสดง "Company Name" เป็นภาษาอังกฤษก่อน ไทยตัวเล็กด้านล่าง และที่อยู่บรรทัดแรกใช้ `company_address_en`
+
 ## รูปแรงงาน (labour photo)
 
 - ฟอร์มเพิ่ม/แก้ไขแรงงาน ส่วน "ข้อมูลส่วนตัว" มีช่อง "รูปแรงงาน" เลือกรูปแล้วเห็นตัวอย่างทันที กด "ลบรูปเดิม" เพื่อเอาออก

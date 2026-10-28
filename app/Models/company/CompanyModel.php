@@ -14,8 +14,10 @@ class CompanyModel extends Model
     protected $primaryKey = 'company_id';
     protected $fillable = [
         'company_name',
+        'company_name_en',
         'company_tax',
         'company_address',
+        'company_address_en',
         'company_province',
         'company_amphur',
         'company_district',

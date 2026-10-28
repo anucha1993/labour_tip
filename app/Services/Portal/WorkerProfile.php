@@ -207,7 +207,7 @@ class WorkerProfile
             trim((string) $c->company_zipcode) ?: null,
         ]);
         $en = array_filter([
-            trim((string) $c->company_address),
+            trim((string) $c->company_address_en) ?: trim((string) $c->company_address),
             $district->name_en ?? null,
             $amphur->name_en ?? null,
             $province->name_en ?? null,
@@ -217,11 +217,13 @@ class WorkerProfile
         return [
             'id' => (int) $c->company_id,
             'name' => (string) $c->company_name,
+            'name_en' => trim((string) $c->company_name_en),
             'type' => (string) $c->company_type,
             'phone' => (string) $c->company_phone,
             'contact' => (string) $c->company_contact,
             'address' => [
                 'line' => (string) $c->company_address,
+                'line_en' => trim((string) $c->company_address_en),
                 'district' => $district->name_th ?? null,
                 'amphur' => $amphur->name_th ?? null,
                 'province' => $province->name_th ?? null,

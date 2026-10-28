@@ -41,7 +41,7 @@ class PortalApiTest extends TestCase
             $t->string('original_name')->nullable(); $t->unsignedBigInteger('size')->nullable(); $t->string('mime')->nullable();
             $t->string('legacy_column')->nullable(); $t->integer('sort_order')->default(0); $t->unsignedBigInteger('uploaded_by')->nullable(); $t->timestamps();
         });
-        Schema::create('company', function (Blueprint $t) { $t->increments('company_id'); $t->string('company_name'); $t->string('company_address')->nullable(); $t->string('company_province')->nullable(); $t->string('company_amphur')->nullable(); $t->string('company_district')->nullable(); $t->string('company_zipcode')->nullable(); $t->string('company_phone')->nullable(); $t->string('company_contact')->nullable(); $t->string('company_type')->nullable(); $t->string('company_status')->nullable(); });
+        Schema::create('company', function (Blueprint $t) { $t->increments('company_id'); $t->string('company_name'); $t->string('company_name_en')->nullable(); $t->string('company_address')->nullable(); $t->string('company_address_en')->nullable(); $t->string('company_province')->nullable(); $t->string('company_amphur')->nullable(); $t->string('company_district')->nullable(); $t->string('company_zipcode')->nullable(); $t->string('company_phone')->nullable(); $t->string('company_contact')->nullable(); $t->string('company_type')->nullable(); $t->string('company_status')->nullable(); });
         Schema::create('agency', function (Blueprint $t) { $t->increments('agency_id'); $t->string('agency_name'); });
         Schema::create('nationality', function (Blueprint $t) { $t->increments('id'); $t->string('code'); $t->string('name_th'); });
         Schema::create('settings', function (Blueprint $t) { $t->increments('set_id'); $t->string('set_name'); $t->integer('set_expire'); });
@@ -54,7 +54,7 @@ class PortalApiTest extends TestCase
         DB::table('provinces')->insert(['id' => 1, 'name_th' => 'กรุงเทพมหานคร', 'name_en' => 'Bangkok']);
         DB::table('amphures')->insert(['id' => 10, 'name_th' => 'คลองเตย', 'name_en' => 'Khlong Toei', 'province_id' => 1]);
         DB::table('districts')->insert(['id' => 100, 'name_th' => 'คลองเตย', 'name_en' => 'Khlong Toei', 'amphure_id' => 10]);
-        DB::table('company')->insert(['company_id' => 1, 'company_name' => 'แสงลินฟู้ดส์', 'company_address' => '123/45 ถนนสุขุมวิท', 'company_province' => '1', 'company_amphur' => '10', 'company_district' => '100', 'company_zipcode' => '10110']);
+        DB::table('company')->insert(['company_id' => 1, 'company_name' => 'แสงลินฟู้ดส์', 'company_name_en' => 'Saeng Lin Foods', 'company_address' => '123/45 ถนนสุขุมวิท', 'company_address_en' => '123/45 Sukhumvit Road', 'company_province' => '1', 'company_amphur' => '10', 'company_district' => '100', 'company_zipcode' => '10110']);
         DB::table('agency')->insert(['agency_id' => 1, 'agency_name' => 'TOP MANPOWER']);
         DB::table('settings')->insert([['set_name' => 'visa', 'set_expire' => 90], ['set_name' => 'work', 'set_expire' => 30], ['set_name' => 'ninety', 'set_expire' => 15], ['set_name' => 'passport', 'set_expire' => 90]]);
 
@@ -105,8 +105,10 @@ class PortalApiTest extends TestCase
             ->assertJsonPath('profile.status.active', true)
             ->assertJsonPath('profile.status.label_th', 'ทำงาน')
             ->assertJsonPath('profile.employer.name', 'แสงลินฟู้ดส์')
+            ->assertJsonPath('profile.employer.name_en', 'Saeng Lin Foods')
+            ->assertJsonPath('profile.employer.address.line_en', '123/45 Sukhumvit Road')
             ->assertJsonPath('profile.employer.address.text_th', '123/45 ถนนสุขุมวิท แขวงคลองเตย เขตคลองเตย กรุงเทพมหานคร 10110')
-            ->assertJsonPath('profile.employer.address.text_en', '123/45 ถนนสุขุมวิท, Khlong Toei, Khlong Toei, Bangkok, 10110')
+            ->assertJsonPath('profile.employer.address.text_en', '123/45 Sukhumvit Road, Khlong Toei, Khlong Toei, Bangkok, 10110')
             ->assertJsonPath('profile.passport.days_left', 450)
             ->assertJsonPath('profile.passport.level', 'ok')
             ->assertJsonPath('profile.work_permit.number', '1234-5678-90')
