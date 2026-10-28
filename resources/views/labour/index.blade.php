@@ -143,8 +143,17 @@
                                     @if ($canEdit)<td><input type="checkbox" class="form-check-input" name="labour_ids[]" value="{{ $item->labour_id }}"></td>@endif
                                     <td class="text-3">{{ $labours->firstItem() + $i }}</td>
                                     <td>
-                                        <a href="{{ route('labour.show', $item->labour_id) }}" class="fw-name">{{ $item->labour_prefix }}. {{ $item->labour_fullname }}</a>
-                                        <div class="sub">{{ sex_label($item->labour_sex) }}@if ($item->labour_labour_number) · รหัส {{ $item->labour_labour_number }}@endif</div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            @if ($item->hasPhoto())
+                                                <img src="{{ $item->photoUrl() }}" alt="" class="avatar avatar-img" style="width:34px;height:34px" loading="lazy">
+                                            @else
+                                                <span class="avatar" style="width:34px;height:34px;font-size:.8rem">{{ mb_strtoupper(mb_substr($item->labour_fullname, 0, 1)) }}</span>
+                                            @endif
+                                            <div class="min-w-0">
+                                                <a href="{{ route('labour.show', $item->labour_id) }}" class="fw-name">{{ $item->labour_prefix }}. {{ $item->labour_fullname }}</a>
+                                                <div class="sub">{{ sex_label($item->labour_sex) }}@if ($item->labour_labour_number) · รหัส {{ $item->labour_labour_number }}@endif</div>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td>
                                         <div class="text-mono">{{ $item->labour_passport_number ?: '-' }}</div>

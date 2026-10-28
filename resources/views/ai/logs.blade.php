@@ -31,8 +31,8 @@
     </x-page-header>
 
     <div class="row g-3 mb-3">
-        <div class="col-6 col-md-3"><x-stat-card label="คำถาม (ตามตัวกรอง)" :value="(int) ($summary->total ?? 0)" icon="mdi-chat-question" color="primary" /></div>
-        <div class="col-6 col-md-3"><x-stat-card label="ผู้ใช้ที่ถาม" :value="(int) ($summary->users ?? 0)" icon="mdi-account-group" color="info" /></div>
+        <div class="col-6 col-md-3"><x-stat-card label="คำถาม (ตามตัวกรอง)" :value="(int) ($summary->total ?? 0)" icon="mdi-comment-question-outline" color="primary" /></div>
+        <div class="col-6 col-md-3"><x-stat-card label="ผู้ใช้ที่ถาม" :value="(int) ($summary->users ?? 0)" icon="mdi-account-multiple" color="info" /></div>
         <div class="col-6 col-md-3"><x-stat-card label="Token ที่ใช้" :value="(int) ($summary->tokens ?? 0)" icon="mdi-counter" color="warning" /></div>
         <div class="col-6 col-md-3"><x-stat-card label="ตอบไม่สำเร็จ" :value="(int) ($summary->errors ?? 0)" icon="mdi-alert-circle" color="{{ ($summary->errors ?? 0) > 0 ? 'danger' : 'secondary' }}" :href="route('ai.logs', ['status' => 'error'])" /></div>
     </div>
@@ -88,7 +88,7 @@
                 </form>
 
                 @if ($logs->count() === 0)
-                    <x-empty-state icon="mdi-robot-off" title="ยังไม่มีประวัติการถาม AI" />
+                    <x-empty-state icon="mdi-comment-multiple-outline" title="ยังไม่มีประวัติการถาม AI" />
                 @else
                     <div class="table-wrap mt-3">
                         <table class="table table-modern">
@@ -108,7 +108,7 @@
                                         <td class="text-2" style="white-space:nowrap">
                                             {{ fmt_datetime($log->created_at) }}
                                             @if ($log->conversation_id && ! $f['conversation'])
-                                                <div><a href="{{ route('ai.logs', ['conversation' => $log->conversation_id]) }}" class="sub" title="ดูบทสนทนานี้ทั้งหมด"><i class="mdi mdi-forum-outline"></i> บทสนทนา</a></div>
+                                                <div><a href="{{ route('ai.logs', ['conversation' => $log->conversation_id]) }}" class="sub" title="ดูบทสนทนานี้ทั้งหมด"><i class="mdi mdi-forum"></i> บทสนทนา</a></div>
                                             @endif
                                         </td>
                                         <td>
@@ -155,7 +155,7 @@
         <div class="col-xl-3">
             <div class="card">
                 <div class="card-body ai-top-users">
-                    <h6 class="mb-2"><i class="mdi mdi-podium-gold"></i> ถามมากที่สุด 30 วันล่าสุด</h6>
+                    <h6 class="mb-2"><i class="mdi mdi-trophy"></i> ถามมากที่สุด 30 วันล่าสุด</h6>
                     @forelse ($topUsers as $row)
                         <div class="row-item">
                             <div>

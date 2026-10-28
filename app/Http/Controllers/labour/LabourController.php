@@ -7,6 +7,7 @@ use App\Models\agency\AgencyModel;
 use App\Models\company\CompanyModel;
 use App\Models\labour\LabourDocument;
 use App\Models\labour\LabourModel;
+use App\Services\LabourPhotoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -113,6 +114,7 @@ class LabourController extends Controller
             $labour = DB::transaction(function () use ($data, $request) {
                 $labour = LabourModel::create($data);
                 $this->storeUploads($request, $labour);
+                app(LabourPhotoService::class)->sync($request, $labour);
 
                 return $labour;
             });
@@ -121,6 +123,14 @@ class LabourController extends Controller
         }
 
         return redirect()->route('labour.index')->with('success', 'เพิ่มข้อมูลแรงงาน ' . $labour->labour_fullname . ' เรียบร้อยแล้ว');
+    }
+
+    /** Inline profile photo (streams local files, redirects to a signed URL on R2). */
+    public function photo(LabourModel $labourModel, LabourPhotoService $photos)
+    {
+        abort_unless($photos->exists($labourModel), 404);
+
+        return $photos->response($labourModel);
     }
 
     public function show(LabourModel $labourModel)
@@ -157,6 +167,7 @@ class LabourController extends Controller
                 }
 
                 $this->storeUploads($request, $labourModel);
+                app(LabourPhotoService::class)->sync($request, $labourModel);
             });
         } catch (\RuntimeException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -180,6 +191,7 @@ class LabourController extends Controller
             Storage::disk('public')->deleteDirectory($folder);
         }
 
+        app(LabourPhotoService::class)->remove($labourModel, false);
         $name = $labourModel->labour_fullname;
         $labourModel->delete();
 
@@ -234,6 +246,8 @@ class LabourController extends Controller
             'labour_escape_date' => ['nullable', 'date'],
             'labour_status' => ['required', Rule::in(['enable', 'disable'])],
             'labour_note' => ['nullable', 'string', 'max:5000'],
+            'labour_photo' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'remove_photo' => ['nullable', 'boolean'],
             'documents' => ['nullable', 'array', 'max:' . self::MAX_DOCS_PER_SAVE],
             'documents.*.name' => ['nullable', 'string', 'max:100', 'required_with:documents.*.file'],
             'documents.*.file' => self::FILE_RULE,
@@ -246,11 +260,14 @@ class LabourController extends Controller
             'documents.*.name.required_with' => 'กรุณาระบุชื่อเอกสารของไฟล์ที่เลือก',
             'documents.*.file.mimes' => 'ไฟล์เอกสารต้องเป็น PDF, JPG หรือ PNG เท่านั้น',
             'documents.*.file.max' => 'ไฟล์เอกสารต้องมีขนาดไม่เกิน 10 MB',
+            'labour_photo.image' => 'รูปแรงงานต้องเป็นไฟล์รูปภาพ',
+            'labour_photo.mimes' => 'รูปแรงงานรองรับเฉพาะ JPG, PNG หรือ WEBP',
+            'labour_photo.max' => 'รูปแรงงานต้องมีขนาดไม่เกิน 5 MB',
             'documents.max' => 'อัปโหลดได้ครั้งละไม่เกิน ' . self::MAX_DOCS_PER_SAVE . ' ไฟล์',
             '*.date' => 'รูปแบบวันที่ไม่ถูกต้อง',
         ]);
 
-        unset($validated['documents']);
+        unset($validated['documents'], $validated['labour_photo'], $validated['remove_photo']);
         $validated['labour_passport_number'] = strtoupper(trim($validated['labour_passport_number']));
 
         return $validated;

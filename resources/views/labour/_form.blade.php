@@ -19,6 +19,38 @@
 {{-- ============================================================ 1. personal --}}
 <x-form.card id="sec-personal" icon="mdi-account" title="ข้อมูลส่วนตัว" subtitle="ชื่อตามหนังสือเดินทาง สัญชาติ และเอเจนซี่ที่จัดส่ง">
     <div class="row g-3">
+        {{-- profile photo --}}
+        <div class="col-12">
+            <div class="labour-photo-pick" data-photo-pick>
+                <label for="labour_photo" class="labour-photo-frame" title="เลือกรูปแรงงาน">
+                    @if ($labour->hasPhoto())
+                        <img src="{{ $labour->photoUrl() }}" alt="รูปแรงงาน" data-photo-preview>
+                    @else
+                        <img src="" alt="" data-photo-preview hidden>
+                    @endif
+                    <span class="placeholder" data-photo-placeholder @if ($labour->hasPhoto()) hidden @endif><i class="mdi mdi-account"></i><small>ไม่มีรูป</small></span>
+                    <span class="cam"><i class="mdi mdi-camera"></i></span>
+                </label>
+                <div class="labour-photo-meta">
+                    <div class="fw-semibold">รูปแรงงาน</div>
+                    <div class="text-3 small mb-2">JPG, PNG, WEBP ไม่เกิน 5 MB · ระบบย่อและตัดเป็นสี่เหลี่ยมจัตุรัสให้ · แสดงใน Worker App ด้วย</div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <input type="file" name="labour_photo" id="labour_photo" accept="image/jpeg,image/png,image/webp" class="d-none" data-photo-input>
+                        <button type="button" class="btn btn-soft btn-sm" data-photo-choose><i class="mdi mdi-upload"></i> เลือกรูป</button>
+                        <button type="button" class="btn btn-soft btn-sm d-none" data-photo-clear><i class="mdi mdi-close"></i> ยกเลิกรูปที่เลือก</button>
+                        @if ($labour->hasPhoto())
+                            <div class="form-check form-check-inline ms-1 mb-0">
+                                <input type="hidden" name="remove_photo" value="0">
+                                <input type="checkbox" class="form-check-input" name="remove_photo" id="remove_photo" value="1" data-photo-remove>
+                                <label class="form-check-label text-danger" for="remove_photo">ลบรูปเดิม</label>
+                            </div>
+                        @endif
+                    </div>
+                    @error('labour_photo')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                </div>
+            </div>
+        </div>
+
         <x-form.select wrapper="col-6 col-lg-2" name="labour_prefix" label="คำนำหน้า" :value="$labour->labour_prefix ?: 'Mr'" required :options="['Mr' => 'Mr.', 'Ms' => 'Ms.', 'Mrs' => 'Mrs.']" />
         <x-form.input wrapper="col-lg-6" name="labour_fullname" label="ชื่อ-สกุล (ภาษาอังกฤษตามหนังสือเดินทาง)" :value="$labour->labour_fullname" required placeholder="เช่น RATH CHHON" />
         <x-form.select wrapper="col-6 col-lg-2" name="labour_sex" label="เพศ" :value="$labour->labour_sex === 'man' ? 'male' : $labour->labour_sex" required :options="['male' => 'ชาย', 'female' => 'หญิง']" />

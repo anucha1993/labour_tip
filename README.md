@@ -31,6 +31,13 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
   กด "บทสนทนา" เพื่อดูทั้งบทสนทนาเรียงตามลำดับ, สรุปผู้ที่ถามมากที่สุด 30 วัน
 - ต้องรัน `php artisan migrate` หนึ่งครั้งเพื่อสร้างตาราง `ai_chat_logs` (ถ้าตารางยังไม่มี การบันทึกจะถูกข้ามและเขียน warning ลง log แต่แชทยังใช้ได้)
 
+## รูปแรงงาน (labour photo)
+
+- ฟอร์มเพิ่ม/แก้ไขแรงงาน ส่วน "ข้อมูลส่วนตัว" มีช่อง "รูปแรงงาน" เลือกรูปแล้วเห็นตัวอย่างทันที กด "ลบรูปเดิม" เพื่อเอาออก
+- รูปถูกย่อ/ตัดเป็นสี่เหลี่ยม 512×512 JPEG (`app/Services/LabourPhotoService.php` ใช้ `app/Support/SquareImage.php`) เก็บบน disk เดียวกับเอกสาร (`LABOUR_DOCS_DISK`: public หรือ r2) ที่ `photos/<labour_id>_<rand>.jpg` คอลัมน์ `labour.labour_photo` + `labour_photo_disk` (migration `2026_10_28_000003`)
+- แสดงที่หน้ารายละเอียด รายการแรงงาน และส่งให้ Worker App ผ่าน `profile.photo_url` (signed URL 15 นาที key `photo`) เปิดผ่าน `/labour/{id}/photo` (ต้องล็อกอิน; บน R2 จะ redirect ไป signed URL)
+- ลบแรงงานแล้วไฟล์รูปถูกลบตาม
+
 ## โปรไฟล์ผู้ใช้ / รูปโปรไฟล์
 
 - ทุกสิทธิ์แก้ชื่อ รหัสผ่าน (ต้องใส่รหัสผ่านปัจจุบัน) และอัปโหลดรูปโปรไฟล์ได้ที่ `/profile` (เมนูมุมขวาบน หรือกดรูปใน sidebar)

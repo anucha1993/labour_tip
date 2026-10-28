@@ -36,7 +36,11 @@
     {{-- ---------------------------------------------------------- profile --}}
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap align-items-center gap-3">
-            <span class="avatar avatar-lg">{{ mb_strtoupper(mb_substr($labour->labour_fullname, 0, 1)) }}</span>
+            @if ($labour->hasPhoto())
+                <a href="{{ $labour->photoUrl() }}" target="_blank" rel="noopener" title="เปิดรูปขนาดเต็ม"><img src="{{ $labour->photoUrl() }}" alt="รูปแรงงาน" class="avatar avatar-img labour-photo-lg"></a>
+            @else
+                <span class="avatar avatar-lg">{{ mb_strtoupper(mb_substr($labour->labour_fullname, 0, 1)) }}</span>
+            @endif
             <div class="flex-grow-1 min-w-0">
                 <h4 class="mb-1">{{ $labour->labour_prefix }}. {{ $labour->labour_fullname }}</h4>
                 <div class="d-flex flex-wrap gap-2 align-items-center text-2 small">

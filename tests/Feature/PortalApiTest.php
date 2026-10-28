@@ -155,6 +155,15 @@ class PortalApiTest extends TestCase
         // Unsigned direct access -> 403.
         $this->get('/portal-file/1/1')->assertStatus(403);
 
+        // Profile photo: no photo -> null in the profile and 404 on the signed route; with photo -> signed URL that serves JPEG.
+        $this->assertNull($this->api()->getJson('/api/portal/labours/1')->json('profile.photo_url'));
+        Storage::disk('public')->put('photos/1_test.jpg', (string) file_get_contents(__DIR__ . '/../../public/favicon.ico') ?: 'x');
+        LabourModel::find(1)->forceFill(['labour_photo' => 'photos/1_test.jpg', 'labour_photo_disk' => 'public'])->saveQuietly();
+        $photoUrl = $this->api()->getJson('/api/portal/labours/1')->json('profile.photo_url');
+        $this->assertStringStartsWith('http://admin.test/portal-file/1/photo?', $photoUrl);
+        $this->get($photoUrl)->assertOk()->assertHeader('content-type', 'image/jpeg');
+        $this->get('/portal-file/1/photo')->assertStatus(403);
+
         // Row-based document and unknown key.
         $this->api()->getJson('/api/portal/labours/1/documents/1/link')->assertOk()->assertJsonPath('name', 'Visa');
         $this->api()->getJson('/api/portal/labours/1/documents/42/link')->assertStatus(404);

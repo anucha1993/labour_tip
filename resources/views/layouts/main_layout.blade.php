@@ -84,7 +84,7 @@
                     <i class="mdi mdi-history"></i><span class="label">ประวัติการแก้ไข</span>
                 </a>
                 <a href="{{ route('ai.logs') }}" class="sb-link {{ request()->routeIs('ai.logs') ? 'active' : '' }}">
-                    <i class="mdi mdi-robot-outline"></i><span class="label">ประวัติการใช้ AI</span>
+                    <i class="mdi mdi-comment-text-outline"></i><span class="label">ประวัติการใช้ AI</span>
                 </a>
             @endif
         </nav>

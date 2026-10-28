@@ -49,6 +49,8 @@ class LabourModel extends Model
         'labour_file_passport',
         'labour_file_visa',
         'labour_file_work',
+        'labour_photo',
+        'labour_photo_disk',
         'created_by',
         'updated_by',
     ];
@@ -74,6 +76,17 @@ class LabourModel extends Model
      *
      * @return Collection<LabourDocument>
      */
+    public function hasPhoto(): bool
+    {
+        return ! empty($this->labour_photo);
+    }
+
+    /** URL of the profile photo through the app (auth applies), or null. */
+    public function photoUrl(): ?string
+    {
+        return $this->hasPhoto() ? route('labour.photo', $this->labour_id) : null;
+    }
+
     public function documentList(): Collection
     {
         $docs = LabourDocument::tableReady() ? $this->documents : collect();

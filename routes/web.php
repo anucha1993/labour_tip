@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
     // ---------------------------------------------------------------- Labour (read)
     Route::get('/labour', [LabourController::class, 'index'])->name('labour.index');
     Route::get('/labour/form-show/{labourModel}', [LabourController::class, 'show'])->name('labour.show');
+    Route::get('/labour/{labourModel}/photo', [LabourController::class, 'photo'])->name('labour.photo');
     Route::get('/labour/document/{document}/open', [LabourDocumentController::class, 'open'])->name('labour.document.open');
     Route::get('/labour/{labourModel}/legacy-file/{column}', [LabourDocumentController::class, 'openLegacy'])->name('labour.document.openLegacy');
 

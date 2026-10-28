@@ -94,6 +94,7 @@ class WorkerProfile
             ] + $sections['work_permit'],
             'ninety_day' => ['tm_number' => (string) $labour->labour_tm_number] + $sections['ninety_day'],
             'alerts' => $this->alerts($sections),
+            'photo_url' => $labour->hasPhoto() ? URL::temporarySignedRoute('portal.file', now()->addMinutes(self::LINK_MINUTES), ['labourModel' => $labour->labour_id, 'key' => 'photo']) : null,
             'documents' => $this->documents($labour),
             'generated_at' => now()->toIso8601String(),
         ];

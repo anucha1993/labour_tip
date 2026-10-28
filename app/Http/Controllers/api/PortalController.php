@@ -4,6 +4,7 @@ namespace App\Http\Controllers\api;
 
 use App\Http\Controllers\Controller;
 use App\Models\labour\LabourModel;
+use App\Services\LabourPhotoService;
 use App\Services\Portal\WorkerProfile;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -85,6 +86,13 @@ class PortalController extends Controller
      */
     public function file(LabourModel $labourModel, string $key)
     {
+        if ($key === 'photo') {
+            $photos = app(LabourPhotoService::class);
+            abort_unless($photos->exists($labourModel), 404, 'No photo');
+
+            return $photos->response($labourModel);
+        }
+
         $doc = WorkerProfile::findDocument($labourModel, $key);
         abort_unless($doc && $doc->exists(), 404, 'ไม่พบไฟล์เอกสาร / Document not found');
 

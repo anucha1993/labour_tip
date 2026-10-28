@@ -376,7 +376,26 @@
       $$('.btn.is-loading').forEach(function (b) { b.classList.remove('is-loading'); b.disabled = false; });
     }
     return { start: start, stop: stop };
-  })();
+  
+    // Labour profile photo picker (add/edit form): preview the chosen file before saving
+    document.querySelectorAll('[data-photo-pick]').forEach(function (box) {
+        var input = box.querySelector('[data-photo-input]'), img = box.querySelector('[data-photo-preview]');
+        var ph = box.querySelector('[data-photo-placeholder]'), clear = box.querySelector('[data-photo-clear]');
+        var remove = box.querySelector('[data-photo-remove]'), original = img.getAttribute('src') || '';
+        function show(src) { img.src = src; img.hidden = !src; if (ph) ph.hidden = !!src; }
+        box.querySelector('[data-photo-choose]').addEventListener('click', function () { input.click(); });
+        input.addEventListener('change', function () {
+            var f = input.files[0];
+            if (!f) { show(original); clear.classList.add('d-none'); return; }
+            if (f.size > 5 * 1024 * 1024) { alert('รูปต้องมีขนาดไม่เกิน 5 MB'); input.value = ''; return; }
+            var r = new FileReader();
+            r.onload = function (e) { show(e.target.result); clear.classList.remove('d-none'); if (remove) remove.checked = false; };
+            r.readAsDataURL(f);
+        });
+        clear.addEventListener('click', function () { input.value = ''; show(original); clear.classList.add('d-none'); });
+        if (remove) remove.addEventListener('change', function () { if (remove.checked) { input.value = ''; clear.classList.add('d-none'); show(''); } else { show(original); } });
+    });
+})();
 
   function isInternalNavLink(a) {
     if (!a || a.hasAttribute('data-no-loader') || a.hasAttribute('download') || a.target === '_blank') return false;

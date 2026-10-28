@@ -33,7 +33,7 @@
 
                         <div class="avatar-drop mt-3" id="avatarDrop">
                             <input type="file" name="avatar" id="avatarInput" accept="image/jpeg,image/png,image/webp,image/gif" class="d-none">
-                            <i class="mdi mdi-image-plus fs-4 d-block"></i>
+                            <i class="mdi mdi-upload fs-4 d-block"></i>
                             แตะที่ไอคอนกล้อง หรือลากรูปมาวางที่นี่<br>
                             <span class="text-3">JPG, PNG, WEBP ไม่เกิน 5 MB · ระบบจะตัดเป็นสี่เหลี่ยมจัตุรัสให้</span>
                             <div class="mt-2 d-none" id="avatarPreviewWrap">
@@ -67,7 +67,7 @@
                         <div class="col-md-6"><x-form.input name="email" label="อีเมล (เปลี่ยนได้โดย MasterAdmin)" :value="$user->email" readonly disabled /></div>
                     </div>
 
-                    <h6 class="mt-2 mb-1"><i class="mdi mdi-lock-reset"></i> เปลี่ยนรหัสผ่าน</h6>
+                    <h6 class="mt-2 mb-1"><i class="mdi mdi-lock-outline"></i> เปลี่ยนรหัสผ่าน</h6>
                     <p class="text-3 small mb-3">เว้นว่างทั้งหมดถ้าไม่ต้องการเปลี่ยน</p>
                     <div class="row">
                         <div class="col-md-4"><x-form.input name="current_password" type="password" label="รหัสผ่านปัจจุบัน" autocomplete="current-password" /></div>
