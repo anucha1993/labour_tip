@@ -22,7 +22,12 @@ class PortalController extends Controller
     {
     }
 
-    /** POST /api/portal/login  {passport, password} */
+    /**
+     * POST /api/portal/login  {passport, password}
+     * "passport" may also be the worker's name: spaces, dots and dashes are ignored on both sides,
+     * so MYO MIN OO / myominoo / Myo MinOo all match. Same name + same birthday on two different
+     * passports -> ambiguous_name (the worker must use the passport number).
+     */
     public function login(Request $request)
     {
         $data = $request->validate([
@@ -39,6 +44,10 @@ class PortalController extends Controller
             ->orderByRaw("CASE WHEN labour_status = 'enable' THEN 0 ELSE 1 END")
             ->orderByDesc('labour_id')
             ->first();
+
+        if (! $labour) {
+            $labour = $this->findByName($data['passport'], $password);
+        }
 
         if (! $labour || ! $this->birthdayMatches($labour, $password)) {
             throw ValidationException::withMessages(['passport' => ['invalid_credentials']]);
@@ -97,6 +106,29 @@ class PortalController extends Controller
         abort_unless($doc && $doc->exists(), 404, 'ไม่พบไฟล์เอกสาร / Document not found');
 
         return $doc->openResponse();
+    }
+
+    /** Name login: compare letters/digits only, then use the birthday to tell namesakes apart. */
+    private function findByName(string $input, string $password): ?LabourModel
+    {
+        $key = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $input));
+        if (strlen($key) < 3) {
+            return null;
+        }
+
+        $candidates = LabourModel::query()
+            ->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(labour_fullname, ' ', ''), '-', ''), '.', ''), ',', '')) = ?", [$key])
+            ->orderByRaw("CASE WHEN labour_status = 'enable' THEN 0 ELSE 1 END")
+            ->orderByDesc('labour_id')
+            ->get()
+            ->filter(fn (LabourModel $l) => $this->birthdayMatches($l, $password));
+
+        $people = $candidates->map(fn (LabourModel $l) => strtoupper(trim((string) $l->labour_passport_number)))->unique();
+        if ($people->count() > 1) {
+            throw ValidationException::withMessages(['passport' => ['ambiguous_name']]);
+        }
+
+        return $candidates->first();
     }
 
     private function birthdayMatches(LabourModel $labour, string $password): bool

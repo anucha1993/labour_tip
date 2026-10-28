@@ -126,6 +126,37 @@ class PortalApiTest extends TestCase
         $this->assertEqualsCanonicalizing(['Visa', 'Passport'], array_column($docs, 'name'));
     }
 
+    public function test_login_with_name_ignores_spacing_and_uses_birthday_to_tell_namesakes_apart()
+    {
+        // Seeded worker is "MYO MIN AUNG" born 1997-12-06.
+        foreach (['MYO MIN AUNG', 'myo min aung', 'myomin aung', 'myo minaung', 'myominaung', ' Myo  Min-Aung ', 'MYO.MIN.AUNG'] as $typed) {
+            $this->api()->postJson('/api/portal/login', ['passport' => $typed, 'password' => '06121997'])
+                ->assertOk()->assertJsonPath('labour_id', 1);
+        }
+        // Right name, wrong birthday.
+        $this->api()->postJson('/api/portal/login', ['passport' => 'myominaung', 'password' => '07121997'])
+            ->assertStatus(422)->assertJsonPath('errors.passport.0', 'invalid_credentials');
+        // Name too short / unknown.
+        $this->api()->postJson('/api/portal/login', ['passport' => 'MY', 'password' => '06121997'])->assertStatus(422);
+        $this->api()->postJson('/api/portal/login', ['passport' => 'NOBODY HERE', 'password' => '06121997'])->assertStatus(422);
+
+        // A namesake with a different birthday does not get in the way...
+        LabourModel::create(['labour_fullname' => 'Myo Min Aung', 'labour_birthday' => '1990-01-01', 'labour_passport_number' => 'CC7777777', 'labour_status' => 'enable', 'labour_status_job' => 'job']);
+        $this->api()->postJson('/api/portal/login', ['passport' => 'myominaung', 'password' => '06121997'])->assertOk()->assertJsonPath('labour_id', 1);
+        $this->api()->postJson('/api/portal/login', ['passport' => 'myominaung', 'password' => '01011990'])->assertOk()->assertJsonPath('passport_number', null)->assertJsonPath('profile.passport_number', 'CC7777777');
+
+        // ...but the same name AND birthday on two passports is ambiguous: must use the passport number.
+        LabourModel::create(['labour_fullname' => 'MYO MIN AUNG', 'labour_birthday' => '1997-12-06', 'labour_passport_number' => 'DD8888888', 'labour_status' => 'enable', 'labour_status_job' => 'job']);
+        $this->api()->postJson('/api/portal/login', ['passport' => 'myo min aung', 'password' => '06121997'])
+            ->assertStatus(422)->assertJsonPath('errors.passport.0', 'ambiguous_name');
+        $this->api()->postJson('/api/portal/login', ['passport' => 'DD8888888', 'password' => '06121997'])->assertOk()->assertJsonPath('profile.passport_number', 'DD8888888');
+
+        // A disabled duplicate of the same person (same passport) does not count as a second person.
+        LabourModel::create(['labour_fullname' => 'KO KO', 'labour_birthday' => '1995-05-05', 'labour_passport_number' => 'EE1', 'labour_status' => 'disable', 'labour_status_job' => 'resign']);
+        LabourModel::create(['labour_fullname' => 'KO KO', 'labour_birthday' => '1995-05-05', 'labour_passport_number' => 'ee1', 'labour_status' => 'enable', 'labour_status_job' => 'job']);
+        $this->api()->postJson('/api/portal/login', ['passport' => 'koko', 'password' => '05051995'])->assertOk()->assertJsonPath('profile.status.enabled', true);
+    }
+
     public function test_login_failures()
     {
         $this->api()->postJson('/api/portal/login', ['passport' => 'AA1234567', 'password' => '07121997'])
