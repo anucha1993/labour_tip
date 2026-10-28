@@ -63,6 +63,54 @@ class AiChatTest extends TestCase
         Storage::fake('public');
     }
 
+    public function test_bulk_update_by_filter_covers_every_matching_worker_after_one_confirmation()
+    {
+        \Illuminate\Support\Facades\Cache::flush();
+        $master = $this->user('MasterAdmin');
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'f1', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'labour', 'filters' => ['company' => 'แสงลินฟู้ดส์ บจก.', 'status_job' => 'job'], 'changes' => ['status_job' => 'ลาออก', 'resign_date' => '28/10/2026', 'status' => 'ปิดใช้งาน']])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'พบ 1 คน พิมพ์ ยืนยัน']))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'f2', 'type' => 'function', 'function' => ['name' => 'apply_update', 'arguments' => '{}']],
+                ['id' => 'f3', 'type' => 'function', 'function' => ['name' => 'create_excel_report', 'arguments' => json_encode(['title' => 'ลาออก', 'filters' => ['company' => 'แสงลิน', 'status_job' => 'resign']])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'บันทึกแล้ว [ดาวน์โหลด Excel](URL)'])),
+        ]);
+
+        // Company 2 has A3 (job) and A4 (already resigned): only A3 matches the filter.
+        $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'ปิดสถานะแรงงานทุกคนของ แสงลินฟู้ดส์ บจก. เป็นลาออก และปิดใช้งาน'])->assertOk();
+        Http::assertSent(function ($r) {
+            $t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool');
+            $j = $t ? json_decode($t['content'], true) : null;
+
+            return $j && ($j['matched'] ?? 0) === 1 && $j['valid'] === 1 && str_contains($j['items'][0]['record'], 'RATH CHHON')
+                && collect($j['items'][0]['preview'])->firstWhere('field', 'labour_resing_date')['new'] === '2026-10-28';
+        });
+        $this->assertSame('job', LabourModel::find(3)->labour_status_job);
+
+        $res = $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'ยืนยัน แล้วออก Excel ด้วย']);
+        $res->assertOk()->assertJsonPath('tools_used', ['apply_update', 'create_excel_report'])->assertJsonPath('reports.0.rows', 2);
+        $l = LabourModel::find(3);
+        $this->assertSame(['resign', '2026-10-28', 'disable'], [$l->labour_status_job, $l->labour_resing_date, $l->labour_status]);
+        $this->assertSame('resign', LabourModel::find(4)->labour_status_job);   // untouched, was resigned already
+
+        // Rows from a list can name workers with a prefix / different word order and still be found.
+        $svc = app(\App\Services\Ai\DataUpdateService::class);
+        $out = $svc->proposeMany($master, 'labour', [
+            ['query' => 'Ms. AUNG MYO', 'changes' => ['status' => 'disable']],
+            ['query' => 'win san', 'changes' => ['status' => 'disable']],
+            ['query' => 'Mr. NOBODY HERE', 'changes' => ['status' => 'disable']],
+        ]);
+        $this->assertSame(2, $out['valid']);
+        $this->assertStringContainsString('AUNG MYO', $out['items'][0]['record']);
+        $this->assertStringContainsString('SAN WIN', $out['items'][1]['record']);
+        $this->assertSame('Mr. NOBODY HERE', $out['failed'][0]['query']);
+        $svc->cancel($master, $out['token']);
+
+        // No filters at all is refused (never "update everyone").
+        $this->assertStringContainsString('ไม่อนุญาต', app(\App\Services\Ai\DataUpdateService::class)->proposeByFilter($master, [], ['status' => 'disable'])['error']);
+    }
+
     public function test_excel_attachment_becomes_a_text_table_and_rows_can_be_updated_in_one_confirmation()
     {
         \Illuminate\Support\Facades\Cache::flush();
@@ -379,6 +427,17 @@ class AiChatTest extends TestCase
         $search = $svc->search(['keyword' => 'RATH']);
         $this->assertSame(1, $search['total']);
         $this->assertSame('กัมพูชา', $search['rows'][0]['nationality']);
+
+        // company names match without the legal-form words and in any order of the words
+        foreach (['เก่ง เอ็นจิเนียริ่ง', 'บริษัท เก่ง เอ็นจิเนียริ่ง จำกัด', 'เก่ง เอ็นจิเนียริ่ง บจก.', 'เอ็นจิเนียริ่ง เก่ง'] as $name) {
+            $this->assertSame(2, $svc->count(['company' => $name])['total'], $name);
+        }
+        $this->assertSame(0, $svc->count(['company' => 'บริษัท ไม่มีจริง จำกัด'])['total']);
+
+        // worker names: prefix and word order do not matter
+        foreach (['Ms. AUNG MYO', 'Mr AUNG MYO', 'นาย AUNG MYO', 'aung myo', 'MYO AUNG'] as $name) {
+            $this->assertSame(1, $svc->search(['keyword' => $name])['total'], $name);
+        }
 
         // unknown / malicious values are ignored, never interpolated
         $this->assertSame(4, $svc->count(['date_field' => 'labour_id) OR 1=1 --', 'date_from' => '2000-01-01', 'order_by' => 'DROP TABLE'])['total']);

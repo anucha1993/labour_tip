@@ -106,7 +106,11 @@ class DataUpdateService
         'agency' => ['name' => 'agency_name', 'tax' => 'agency_tax', 'nationality' => 'agency_nationality', 'address' => 'agency_address', 'phone' => 'agency_phone', 'email' => 'agency_email', 'contact' => 'agency_contact', 'note' => 'agency_note'],
     ];
 
-    public const MAX_ITEMS = 200;
+    public const MAX_ITEMS = 500;
+
+    public function __construct(private LabourQueryService $query)
+    {
+    }
 
     /** Step 1 (single record): validate + preview. */
     public function propose(User $user, string $entity, string $query, array $changes): array
@@ -179,6 +183,31 @@ class DataUpdateService
                 ? 'แสดงตารางค่าเดิม→ค่าใหม่ของทุกรายการ (และรายการที่แก้ไม่ได้พร้อมเหตุผล) ให้ผู้ใช้ดู แล้วถามให้พิมพ์ "ยืนยัน" ห้ามเรียก apply_update จนกว่าผู้ใช้จะยืนยันในข้อความถัดไป'
                 : 'ไม่มีรายการที่แก้ได้ แจ้งเหตุผลของแต่ละแถวให้ผู้ใช้',
         ];
+    }
+
+    /**
+     * Step 1 (by condition): the same changes for every labour matching the search filters
+     * (same filters as search_labours), e.g. all workers of one company -> resigned + disabled.
+     */
+    public function proposeByFilter(User $user, array $filters, array $changes): array
+    {
+        $filters = array_filter($filters, fn ($v) => $v !== null && $v !== '' && $v !== []);
+        if (! $filters) {
+            return ['error' => 'ต้องระบุเงื่อนไข (filters) อย่างน้อย 1 อย่าง ไม่อนุญาตให้แก้แรงงานทั้งระบบในครั้งเดียว'];
+        }
+        $rows = $this->query->build($filters)->limit(self::MAX_ITEMS + 1)->get(['labour.labour_id', 'labour.labour_fullname', 'labour.labour_passport_number']);
+        if ($rows->isEmpty()) {
+            return ['error' => 'ไม่พบแรงงานตามเงื่อนไขที่ระบุ', 'filters' => $filters];
+        }
+        if ($rows->count() > self::MAX_ITEMS) {
+            return ['error' => 'พบเกิน ' . self::MAX_ITEMS . ' คน กรุณาแบ่งเงื่อนไขให้แคบลง'];
+        }
+        $items = $rows->map(fn ($r) => ['query' => (string) $r->labour_id, 'changes' => $changes])->all();
+        $out = $this->proposeMany($user, 'labour', $items);
+        $out['filters'] = $filters;
+        $out['matched'] = $rows->count();
+
+        return $out;
     }
 
     /** Validate one record's changes. Returns ['error'...] or ['id','label','data','preview']. */
@@ -374,11 +403,25 @@ class DataUpdateService
             if (ctype_digit($query) && ($m = LabourModel::find((int) $query))) {
                 return [$m, []];
             }
-            $exact = LabourModel::whereRaw('UPPER(labour_passport_number) = ?', [strtoupper($query)])->orderByDesc('labour_id')->get();
+            $exact = LabourModel::whereRaw('UPPER(labour_passport_number) = ?', [strtoupper(preg_replace('/\s+/', '', $query))])->orderByDesc('labour_id')->get();
             if ($exact->count() === 1) {
                 return [$exact->first(), []];
             }
-            $rows = LabourModel::where('labour_fullname', 'LIKE', '%' . $query . '%')->orWhere('labour_passport_number', 'LIKE', '%' . $query . '%')->limit(6)->get();
+            $name = LabourQueryService::stripPrefix($query);
+            $exact = LabourModel::whereRaw('UPPER(labour_fullname) = ?', [mb_strtoupper($name)])->get();
+            if ($exact->count() === 1) {
+                return [$exact->first(), []];
+            }
+            if ($exact->count() > 1) {   // namesakes: prefer the single one still enabled / working
+                $live = $exact->filter(fn ($r) => $r->labour_status === 'enable');
+                if ($live->count() === 1) {
+                    return [$live->first(), []];
+                }
+            }
+            $rows = LabourModel::where(function ($w) use ($name, $query) {
+                LabourQueryService::nameLike($w, 'labour_fullname', $name);
+                $w->orWhere('labour_passport_number', 'LIKE', '%' . $query . '%');
+            })->limit(6)->get();
             if ($rows->count() === 1) {
                 return [$rows->first(), []];
             }
@@ -393,7 +436,7 @@ class DataUpdateService
         if ($exact->count() === 1) {
             return [$exact->first(), []];
         }
-        $rows = $class::where($nameCol, 'LIKE', '%' . $query . '%')->limit(6)->get();
+        $rows = $class::where(fn ($w) => LabourQueryService::nameLike($w, $nameCol, $query))->limit(6)->get();
         if ($rows->count() === 1) {
             return [$rows->first(), []];
         }
@@ -457,7 +500,7 @@ class DataUpdateService
 
             return (int) $value;
         }
-        $rows = $class::where($nameCol, 'LIKE', '%' . $value . '%')->limit(6)->get();
+        $rows = $class::where(fn ($w) => LabourQueryService::nameLike($w, $nameCol, (string) $value))->limit(6)->get();
         if ($rows->count() !== 1) {
             return ['error' => ($rows->isEmpty() ? 'ไม่พบ' : 'พบหลาย') . $what . ' "' . $value . '"', 'candidates' => $rows->map(fn ($r) => ['id' => $r->{$idCol}, 'name' => $r->{$nameCol}])->all()];
         }

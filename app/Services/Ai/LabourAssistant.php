@@ -116,7 +116,9 @@ class LabourAssistant
         return match ($name) {
             'propose_update' => is_array($args['items'] ?? null) && $args['items']
                 ? $this->updates->proposeMany($this->actor, (string) ($args['entity'] ?? 'labour'), $args['items'])
-                : $this->updates->propose($this->actor, (string) ($args['entity'] ?? 'labour'), (string) ($args['query'] ?? ''), is_array($args['changes'] ?? null) ? $args['changes'] : []),
+                : (is_array($args['filters'] ?? null) && $args['filters']
+                ? $this->updates->proposeByFilter($this->actor, $args['filters'], is_array($args['changes'] ?? null) ? $args['changes'] : [])
+                : $this->updates->propose($this->actor, (string) ($args['entity'] ?? 'labour'), (string) ($args['query'] ?? ''), is_array($args['changes'] ?? null) ? $args['changes'] : [])),
             'apply_update' => $this->updates->apply($this->actor, isset($args['token']) ? (string) $args['token'] : null),
             'cancel_update' => $this->updates->cancel($this->actor, isset($args['token']) ? (string) $args['token'] : null),
             'get_overview' => $this->query->overview(),
@@ -267,6 +269,7 @@ class LabourAssistant
                     'entity' => ['type' => 'string', 'enum' => ['labour', 'company', 'agency']],
                     'query' => ['type' => 'string', 'description' => 'เลขพาสปอร์ต ชื่อ หรือ id ของรายการที่จะแก้'],
                     'changes' => ['type' => 'object', 'description' => 'ฟิลด์ที่จะแก้และค่าใหม่', 'additionalProperties' => ['type' => 'string']],
+                    'filters' => ['type' => 'object', 'description' => 'แก้ทุกแรงงานที่ตรงเงื่อนไขด้วยค่าเดียวกัน (เฉพาะ entity=labour) ใช้คู่กับ changes เช่น {"company": "ประดิษฐ์ธนานุรักษ์", "status_job": "job"} เงื่อนไขเหมือน search_labours', 'properties' => $filters['properties']],
                     'items' => ['type' => 'array', 'description' => 'แก้หลายรายการพร้อมกัน (เช่น จากไฟล์ Excel) แต่ละรายการมี query และ changes ใช้แทน query/changes ด้านบน ไม่เกิน ' . DataUpdateService::MAX_ITEMS . ' รายการ', 'items' => ['type' => 'object', 'properties' => ['query' => ['type' => 'string'], 'changes' => ['type' => 'object', 'additionalProperties' => ['type' => 'string']]], 'required' => ['query', 'changes']]],
                 ],
                 'required' => ['entity'],
@@ -329,6 +332,7 @@ class LabourAssistant
 8. เมื่อถามถึงไฟล์เอกสาร (PDF/รูป พาสปอร์ต วีซ่า ใบอนุญาตทำงาน) ให้เรียก get_labour_detail แล้วดูช่อง "เอกสารไฟล์" ตอบเป็นรายการ [ชื่อเอกสาร – ชื่อไฟล์](open_url) ถ้ารายการว่างให้บอกว่ายังไม่มีไฟล์อัปโหลดในระบบ
 {$writeRules}
 11. ถ้าข้อความผู้ใช้มีส่วน "ไฟล์แนบจากผู้ใช้" แสดงว่าผู้ใช้อัปโหลดเอกสารมาพร้อมคำถาม ให้ใช้เนื้อหานั้นตอบได้ทันที (ไม่ต้องเรียก read_labour_document) ถ้าผู้ใช้ขอให้ตรวจสอบ/อัปเดตข้อมูลตามไฟล์ ให้หาแรงงานจากชื่อหรือเลขพาสปอร์ตในไฟล์ด้วย get_labour_detail เทียบทีละฟิลด์ แล้ว (ถ้ามีสิทธิ์) propose_update เฉพาะฟิลด์ที่ต่างกัน พร้อมบอกว่าค่ามาจากไฟล์ ถ้าไม่มีสิทธิ์ให้สรุปจุดที่ต่างให้ผู้ใช้ไปแก้เอง
+13. คำขอแก้ "ทุกคน/ทั้งหมดของบริษัท X" หรือ "แรงงาน N คนของ X": ให้ propose_update ด้วย filters (เช่น company + status_job) ไม่ใช่ query ชื่อบริษัท ผลลัพธ์จะบอกจำนวนที่พบ (matched) ถ้าต่างจากจำนวนที่ผู้ใช้บอก ให้ชี้ให้เห็นก่อนขอยืนยัน เมื่อทุกรายการเปลี่ยนเหมือนกัน แสดงตารางการเปลี่ยนครั้งเดียวแล้วตามด้วยรายชื่อ (ย่อถ้าเกิน 30 คน) ถ้าผู้ใช้ขอรายงาน Excel ของรายการที่แก้ ให้สร้างด้วย create_excel_report หลังบันทึกเสร็จโดยใช้เงื่อนไขเดิม ห้ามสร้างรายงานเรื่องอื่นแทนเมื่อการแก้ไขทำไม่ได้ ให้บอกเหตุผลและถามกลับแทน
 12. ไฟล์แนบที่เป็นตาราง (Excel/CSV): แต่ละแถวคือหนึ่งรายการ ใช้คอลัมน์เลขพาสปอร์ต (หรือชื่อ) เป็น query และจับคู่หัวตารางกับฟิลด์ของระบบเอง (เช่น "วีซ่าหมดอายุ" → labour_visa_date_end, "นายจ้าง" → company_id) ถ้าหัวตารางกำกวมให้ถามก่อน การแก้ทีละหลายแถวให้เรียก propose_update ครั้งเดียวด้วย items (ไม่ต้องเรียกทีละแถว) แล้วแสดงสรุป: จำนวนแถวที่แก้ได้ ตารางค่าเดิม→ใหม่ และแถวที่แก้ไม่ได้พร้อมเหตุผล ก่อนขอให้ยืนยันครั้งเดียว
 9. เมื่อผู้ใช้ขอให้ "ดึงเนื้อหา" "อ่าน" "ตรวจสอบ" หรือ "เทียบ" ข้อมูลในไฟล์ ให้เรียก read_labour_document (ระบุ query และ document) แล้วสรุปสิ่งที่อ่านได้ ถ้าผู้ใช้ถามว่าตรงกับข้อมูลในระบบไหม ให้เทียบทีละฟิลด์ (ชื่อ เลขที่ วันเกิด วันหมดอายุ) และชี้จุดที่ต่างกันชัดๆ ห้ามบอกว่าอ่านไฟล์ไม่ได้ก่อนลองเรียกเครื่องมือนี้
 

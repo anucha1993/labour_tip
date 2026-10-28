@@ -111,9 +111,10 @@ class LabourQueryService
 
         if ($kw = $this->str($f, 'keyword')) {
             $like = '%' . $kw . '%';
-            $q->where(function ($w) use ($like) {
-                $w->where('labour.labour_fullname', 'LIKE', $like)
-                    ->orWhere('labour.labour_passport_number', 'LIKE', $like)
+            $name = self::stripPrefix($kw);
+            $q->where(function ($w) use ($like, $name) {
+                self::nameLike($w, 'labour.labour_fullname', $name);
+                $w->orWhere('labour.labour_passport_number', 'LIKE', $like)
                     ->orWhere('labour.labour_visa_number', 'LIKE', $like)
                     ->orWhere('labour.labour_workpremit_number', 'LIKE', $like)
                     ->orWhere('labour.labour_number', 'LIKE', $like)
@@ -122,7 +123,10 @@ class LabourQueryService
             });
         }
         if ($v = $this->str($f, 'company')) {
-            $q->where(fn ($w) => $w->where('company.company_name', 'LIKE', '%' . $v . '%')->orWhere('company.company_tax', $v));
+            $q->where(function ($w) use ($v) {
+                $w->where('company.company_tax', $v);
+                self::nameLike($w, 'company.company_name', $v);
+            });
         }
         if ($v = $this->str($f, 'agency')) {
             $q->where('agency.agency_name', 'LIKE', '%' . $v . '%');
@@ -371,6 +375,35 @@ class LabourQueryService
             'มีไฟล์อยู่จริง' => $d->exists(),
             'open_url' => $d->id ? route('labour.document.open', $d->id) : route('labour.document.openLegacy', [$labourId, $d->legacy_column]),
         ])->values()->all();
+    }
+
+    /** Words that only say what kind of legal entity a name is; ignored when matching company/agency names. */
+    public const LEGAL_WORDS = ['บริษัท', 'บจก.', 'บจก', 'จำกัด', 'จํากัด', '(มหาชน)', 'มหาชน', 'หจก.', 'หจก', 'ห้างหุ้นส่วนจำกัด', 'บมจ.', 'บมจ', 'co.,ltd.', 'co., ltd.', 'co.,ltd', 'co ltd', 'company', 'limited', 'ltd.', 'ltd', 'co.', 'นจ.', 'นาย', 'นาง', 'นางสาว'];
+
+    /**
+     * "ประดิษฐ์ธนานุรักษ์ บจก." / "บริษัท ประดิษฐ์ธนานุรักษ์ จำกัด" / "ประดิษฐ์ ธนานุรักษ์" all match the same row:
+     * the whole text is tried first, then every meaningful word must appear in the name.
+     */
+    /** "Ms. CHHUON SAVETH" / "นางสาว CHHUON SAVETH" -> "CHHUON SAVETH" (the prefix is a separate column). */
+    public static function stripPrefix(string $name): string
+    {
+        return trim(preg_replace('/^(mr|mrs|ms|miss|นาย|นางสาว|นาง|น\.ส\.)\.?\s+/iu', '', trim($name)));
+    }
+
+    public static function nameLike($query, string $column, string $value): void
+    {
+        $value = trim($value);
+        $words = array_values(array_filter(preg_split('/[\s,]+/u', mb_strtolower($value)), function ($w) {
+            return $w !== '' && ! in_array($w, array_map('mb_strtolower', self::LEGAL_WORDS), true);
+        }));
+        $query->orWhere($column, 'LIKE', '%' . $value . '%');
+        if ($words && (count($words) > 1 || implode(' ', $words) !== mb_strtolower($value))) {
+            $query->orWhere(function ($w) use ($column, $words) {
+                foreach ($words as $word) {
+                    $w->where($column, 'LIKE', '%' . $word . '%');
+                }
+            });
+        }
     }
 
     private function str(array $f, string $key): ?string
