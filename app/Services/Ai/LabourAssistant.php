@@ -17,7 +17,7 @@ class LabourAssistant
     private const MAX_TOOL_ROUNDS = 6;
     private const MAX_HISTORY = 20;
 
-    public function __construct(private OpenAiClient $client, private LabourQueryService $query)
+    public function __construct(private OpenAiClient $client, private LabourQueryService $query, private DocumentReader $reader)
     {
     }
 
@@ -100,8 +100,28 @@ class LabourAssistant
             'list_companies' => $this->query->listCompanies($args['keyword'] ?? null),
             'list_agencies' => $this->query->listAgencies(),
             'create_excel_report' => $this->createReport($args, $reports),
+            'read_labour_document' => $this->readDocument((string) ($args['query'] ?? ''), (string) ($args['document'] ?? '')),
             default => ['error' => 'unknown tool'],
         };
+    }
+
+    /** Send the file to the vision model and hand its reading back to the chat model. */
+    private function readDocument(string $query, string $document): array
+    {
+        [$labour, $doc, $candidates] = $this->query->findDocument($query, $document);
+        if (! $labour) {
+            return ['error' => 'ไม่พบแรงงานตามคำค้น "' . $query . '"'];
+        }
+        if (! $doc) {
+            return [
+                'error' => $candidates ? 'ระบุเอกสารไม่ชัดเจน กรุณาเลือกจาก document_key ด้านล่าง' : 'แรงงานคนนี้ยังไม่มีไฟล์เอกสารในระบบ',
+                'labour' => trim($labour->labour_prefix . '. ' . $labour->labour_fullname),
+                'documents' => $candidates,
+            ];
+        }
+
+        return ['labour' => trim($labour->labour_prefix . '. ' . $labour->labour_fullname), 'passport_number' => $labour->labour_passport_number]
+            + $this->reader->read($doc);
     }
 
     private function createReport(array $args, array &$reports): array
@@ -198,6 +218,14 @@ class LabourAssistant
             $fn('search_labours', 'ค้นหารายชื่อแรงงานตามเงื่อนไข คืนค่า total และรายการ (จำกัดจำนวนแถว) ใช้เมื่อต้องการรายชื่อ', ['type' => 'object', 'properties' => ['filters' => $filters]]),
             $fn('count_labours', 'นับจำนวนแรงงานตามเงื่อนไข เลือก group_by เพื่อสรุปยอดแยกกลุ่มได้', ['type' => 'object', 'properties' => ['filters' => $filters, 'group_by' => ['type' => 'string', 'enum' => array_keys(LabourQueryService::GROUP_FIELDS)]]]),
             $fn('get_labour_detail', 'ดูข้อมูลแรงงานรายคนแบบละเอียดจากชื่อหรือเลขพาสปอร์ต รวมรายการไฟล์เอกสารที่อัปโหลดไว้ (พาสปอร์ต วีซ่า ใบอนุญาตทำงาน ฯลฯ) พร้อม open_url สำหรับเปิดไฟล์', ['type' => 'object', 'properties' => ['query' => ['type' => 'string']], 'required' => ['query']]),
+            $fn('read_labour_document', 'อ่านเนื้อหาในไฟล์เอกสารที่อัปโหลดไว้ (PDF หรือรูป) ด้วย OCR/vision แล้วคืนข้อความและฟิลด์สำคัญที่อ่านได้ ใช้เมื่อผู้ใช้ขอให้ดึงเนื้อหา อ่าน ตรวจสอบ หรือเทียบข้อมูลในไฟล์กับฐานข้อมูล', [
+                'type' => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
+                    'document' => ['type' => 'string', 'description' => 'document_key จาก get_labour_detail หรือชื่อเอกสาร เช่น Passport, Visa, Work Permit'],
+                ],
+                'required' => ['query', 'document'],
+            ]),
             $fn('list_companies', 'รายชื่อบริษัท/นายจ้าง พร้อมจำนวนแรงงาน', ['type' => 'object', 'properties' => ['keyword' => ['type' => 'string']]]),
             $fn('list_agencies', 'รายชื่อเอเจนซี่ พร้อมสัญชาติและจำนวนแรงงาน', $empty),
             $fn('create_excel_report', 'สร้างไฟล์ Excel รายงานแรงงานตามเงื่อนไข (สูงสุด ' . LabourQueryService::MAX_EXPORT_ROWS . ' แถว) คืน download_url ให้ผู้ใช้ ใช้เมื่อผู้ใช้ขอไฟล์/รายงาน/Excel/ดาวน์โหลด', [
@@ -231,6 +259,7 @@ class LabourAssistant
 6. ไม่ทำรายการแก้ไข/ลบข้อมูล และไม่เปิดเผยข้อมูลที่ไม่ได้มาจากเครื่องมือ
 7. สถานะการทำงาน: job=ทำงาน, resign=ลาออก, escape=หลบหนี  สถานะในระบบ: enable=เปิดใช้งาน, disable=ปิดใช้งาน
 8. เมื่อถามถึงไฟล์เอกสาร (PDF/รูป พาสปอร์ต วีซ่า ใบอนุญาตทำงาน) ให้เรียก get_labour_detail แล้วดูช่อง "เอกสารไฟล์" ตอบเป็นรายการ [ชื่อเอกสาร – ชื่อไฟล์](open_url) ถ้ารายการว่างให้บอกว่ายังไม่มีไฟล์อัปโหลดในระบบ
+9. เมื่อผู้ใช้ขอให้ "ดึงเนื้อหา" "อ่าน" "ตรวจสอบ" หรือ "เทียบ" ข้อมูลในไฟล์ ให้เรียก read_labour_document (ระบุ query และ document) แล้วสรุปสิ่งที่อ่านได้ ถ้าผู้ใช้ถามว่าตรงกับข้อมูลในระบบไหม ให้เทียบทีละฟิลด์ (ชื่อ เลขที่ วันเกิด วันหมดอายุ) และชี้จุดที่ต่างกันชัดๆ ห้ามบอกว่าอ่านไฟล์ไม่ได้ก่อนลองเรียกเครื่องมือนี้
 
 คอลัมน์ที่ใช้ใน Excel ได้: {$columns}
 PROMPT;

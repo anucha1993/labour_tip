@@ -40,6 +40,8 @@ class AiChatTest extends TestCase
         Schema::create('settings', function (Blueprint $t) { $t->increments('set_id'); $t->string('set_name'); $t->integer('set_expire'); });
         Schema::create('ai_chat_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('conversation_id')->nullable(); $t->text('question'); $t->text('answer')->nullable(); $t->text('tools_used')->nullable(); $t->text('reports')->nullable(); $t->integer('prompt_tokens')->default(0); $t->integer('completion_tokens')->default(0); $t->integer('duration_ms')->default(0); $t->string('status')->default('ok'); $t->text('error')->nullable(); $t->string('ip')->nullable(); $t->timestamp('created_at')->nullable(); });
         Schema::create('users', function (Blueprint $t) { $t->increments('id'); $t->string('name'); $t->string('email')->nullable(); $t->string('password')->nullable(); $t->string('type')->nullable(); $t->string('status')->nullable(); $t->timestamps(); });
+        Schema::create('labour_documents', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('labour_id'); $t->string('name'); $t->string('disk'); $t->string('path'); $t->string('original_name')->nullable(); $t->unsignedBigInteger('size')->nullable(); $t->string('mime')->nullable(); $t->string('legacy_column')->nullable(); $t->integer('sort_order')->default(0); $t->unsignedBigInteger('uploaded_by')->nullable(); $t->timestamps(); });
+        \App\Models\labour\LabourDocument::forgetTableReady();
         Schema::create('action_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('action_type'); $t->string('model_type'); $t->unsignedBigInteger('model_id'); $t->text('old_values')->nullable(); $t->text('new_values')->nullable(); $t->timestamp('created_at')->nullable(); });
 
         DB::table('nationality')->insert([['code' => 'myanmar', 'name_th' => 'พม่า'], ['code' => 'cambodia', 'name_th' => 'กัมพูชา']]);
@@ -57,6 +59,64 @@ class AiChatTest extends TestCase
                 'labour_agency' => 1, 'labour_passport_number' => $pp, 'labour_status_job' => $status, 'labour_status' => 'enable', 'labour_visa_date_end' => $visaEnd->toDateString()]);
         }
         Storage::fake('local');
+        Storage::fake('public');
+    }
+
+    public function test_assistant_can_read_a_document_file_through_the_vision_model()
+    {
+        Storage::disk('public')->put('A1/A1_Passport.pdf', '%PDF-1.4 fake passport');
+        \App\Models\labour\LabourDocument::create(['labour_id' => 1, 'name' => 'Passport', 'disk' => 'public', 'path' => 'A1/A1_Passport.pdf', 'original_name' => 'A1_Passport.pdf', 'size' => 22]);
+        \Illuminate\Support\Facades\Cache::flush();
+
+        Http::fake([
+            'api.openai.com/*' => Http::sequence()
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                    ['id' => 'c1', 'type' => 'function', 'function' => ['name' => 'read_labour_document', 'arguments' => json_encode(['query' => 'A1', 'document' => 'passport'])]]]]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => "ประเภทเอกสาร: หนังสือเดินทาง\nชื่อ-สกุล: AUNG MYO\nเลขที่เอกสาร: A1\nวันหมดอายุ: 2030-01-01"]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ในไฟล์ระบุชื่อ **AUNG MYO** เลขที่ A1 หมดอายุ 2030-01-01 ตรงกับระบบ']))
+                // second turn: same file -> served from cache, so only the two chat calls
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                    ['id' => 'c2', 'type' => 'function', 'function' => ['name' => 'read_labour_document', 'arguments' => json_encode(['query' => 'A1', 'document' => '1'])]]]]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ตอบจาก cache']))
+                // third turn: unknown document
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                    ['id' => 'c3', 'type' => 'function', 'function' => ['name' => 'read_labour_document', 'arguments' => json_encode(['query' => 'A1', 'document' => 'visa'])]]]]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ไม่มีไฟล์วีซ่า'])),
+        ]);
+
+        $res = $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'ดึงเนื้อหาในไฟล์พาสปอร์ตของ A1 มาหน่อย']);
+        $res->assertOk()->assertJsonPath('tools_used', ['read_labour_document']);
+        $this->assertStringContainsString('AUNG MYO', $res->json('answer'));
+
+        // The middle request carried the PDF as a base64 file part for the vision model.
+        Http::assertSentCount(3);
+        Http::assertSent(function ($request) {
+            $parts = $request->data()['messages'][1]['content'] ?? null;
+            if (! is_array($parts) || ($parts[1]['type'] ?? '') !== 'file') {
+                return false;
+            }
+            $data = $parts[1]['file']['file_data'];
+
+            return $parts[1]['file']['filename'] === 'A1_Passport.pdf'
+                && str_starts_with($data, 'data:application/pdf;base64,')
+                && base64_decode(substr($data, strlen('data:application/pdf;base64,'))) === '%PDF-1.4 fake passport';
+        });
+
+        // The chat model got the OCR text back as the tool result.
+        Http::assertSent(function ($request) {
+            $tool = collect($request->data()['messages'] ?? [])->firstWhere('role', 'tool');
+
+            return $tool && str_contains($tool['content'], 'AUNG MYO') && str_contains($tool['content'], '"document":"Passport"');
+        });
+
+        // Second read of the same file is served from cache: only the two chat calls hit OpenAI (3 + 2).
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'อ่านอีกที'])->assertOk()->assertJsonPath('answer', 'ตอบจาก cache');
+        Http::assertSentCount(5);
+
+        // Unknown document -> the tool explains and lists what exists instead of failing.
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'อ่านวีซ่า'])->assertOk();
+        Http::assertSentCount(7);
+        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], 'document_key'));
     }
 
     private function user(string $type = 'Member'): User

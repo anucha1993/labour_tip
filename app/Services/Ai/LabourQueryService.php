@@ -324,6 +324,38 @@ class LabourQueryService
     }
 
     /** Uploaded files (labour_documents rows + legacy labour_file_* columns) with links the user can open. */
+    /**
+     * Find one uploaded document of a labour for the read_labour_document tool.
+     * $document may be the document_key from get_labour_detail or (part of) the document name / file name.
+     *
+     * @return array{0: ?LabourModel, 1: ?LabourDocument, 2: array} labour, document, candidates (when ambiguous / not found)
+     */
+    public function findDocument(string $query, string $document): array
+    {
+        $row = $this->build(['keyword' => $query, 'limit' => 1])->first();
+        $labour = $row ? LabourModel::find((int) $row->labour_id) : null;
+        if (! $labour) {
+            return [null, null, []];
+        }
+
+        $docs = $labour->documentList();
+        $key = trim($document);
+        $needle = mb_strtolower($key);
+        $match = $docs->first(fn (LabourDocument $d) => ($d->id ? (string) $d->id : 'legacy-' . $d->legacy_column) === $key);
+        if (! $match && $needle !== '') {
+            $hits = $docs->filter(fn (LabourDocument $d) => str_contains(mb_strtolower((string) $d->name), $needle) || str_contains(mb_strtolower($d->fileName()), $needle));
+            $match = $hits->count() === 1 ? $hits->first() : null;
+            if (! $match && $hits->count() > 1) {
+                $docs = $hits;
+            }
+        }
+        if (! $match && $docs->count() === 1 && $needle === '') {
+            $match = $docs->first();
+        }
+
+        return [$labour, $match, $this->documentsOf((int) $labour->labour_id)];
+    }
+
     private function documentsOf(int $labourId): array
     {
         $labour = LabourModel::find($labourId);
@@ -332,6 +364,7 @@ class LabourQueryService
         }
 
         return $labour->documentList()->map(fn (LabourDocument $d) => [
+            'document_key' => $d->id ? (string) $d->id : 'legacy-' . $d->legacy_column,
             'ชื่อเอกสาร' => $d->name,
             'ไฟล์' => $d->fileName(),
             'ขนาด' => $d->humanSize(),
