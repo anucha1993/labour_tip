@@ -37,6 +37,8 @@ return [
 
     'google' => [
         'translate_key' => env('GOOGLE_TRANSLATE_API_KEY'),
+        // Cloud Vision OCR for the AI document reader; falls back to the translate key when unset.
+        'vision_key' => env('GOOGLE_VISION_API_KEY'),
     ],
 
     'openai' => [

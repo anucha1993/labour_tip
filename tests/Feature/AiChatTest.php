@@ -25,6 +25,7 @@ class AiChatTest extends TestCase
         config(['database.connections.testing_sqlite' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
         config(['database.default' => 'testing_sqlite']);
         config(['services.openai.key' => 'test-key', 'services.openai.model' => 'gpt-test']);
+        config(['services.google.vision_key' => '', 'services.google.translate_key' => '']); // no Google Vision unless a test enables it
         DB::purge('testing_sqlite');
 
         Schema::create('labour', function (Blueprint $t) {
@@ -60,6 +61,44 @@ class AiChatTest extends TestCase
         }
         Storage::fake('local');
         Storage::fake('public');
+    }
+
+    public function test_google_vision_reads_every_page_and_the_chat_model_structures_it()
+    {
+        config(['services.google.vision_key' => 'vision-test']);
+        Storage::disk('public')->put('A1/A1_Passport.pdf', "%PDF-1.4\n1 0 obj<</Type/Page>>endobj 2 0 obj<</Type/Page>>endobj 3 0 obj<</Type/Page>>endobj");
+        \App\Models\labour\LabourDocument::create(['labour_id' => 1, 'name' => 'Passport', 'disk' => 'public', 'path' => 'A1/A1_Passport.pdf', 'original_name' => 'A1_Passport.pdf', 'size' => 90]);
+        \Illuminate\Support\Facades\Cache::flush();
+
+        Http::fake([
+            'vision.googleapis.com/*' => Http::response(['responses' => [['totalPages' => 3, 'responses' => [
+                ['context' => ['pageNumber' => 1], 'fullTextAnnotation' => ['text' => "PASSPORT\nAUNG MYO\nA1\n01 JAN 2030"]],
+                ['context' => ['pageNumber' => 2], 'fullTextAnnotation' => ['text' => 'VISA STAY PERMIT UNTIL 1 JUN 2026']],
+                ['context' => ['pageNumber' => 3]],
+            ]]]]),
+            'api.openai.com/*' => Http::sequence()
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                    ['id' => 'c1', 'type' => 'function', 'function' => ['name' => 'read_labour_document', 'arguments' => json_encode(['query' => 'A1', 'document' => 'passport'])]]]]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => "1) จำนวนหน้า: 3\n2) ชื่อ-สกุล: AUNG MYO\n3) หน้า 1: พาสปอร์ต หน้า 2: วีซ่า หน้า 3: ว่าง"]))
+                ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ไฟล์มี 3 หน้า'])),
+        ]);
+
+        $res = $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'ไฟล์พาสปอร์ต A1 มีกี่หน้า']);
+        $res->assertOk()->assertJsonPath('answer', 'ไฟล์มี 3 หน้า');
+
+        // Vision got the PDF with pages 1-3 requested; the structuring call received the per-page OCR text, not the file.
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'files:annotate') && $r->data()['requests'][0]['pages'] === [1, 2, 3]
+            && $r->data()['requests'][0]['inputConfig']['mimeType'] === 'application/pdf');
+        Http::assertSent(function ($r) {
+            $u = $r->data()['messages'][1]['content'] ?? null;
+
+            return is_string($u) && str_contains($u, '===== หน้า 2 =====') && str_contains($u, 'STAY PERMIT') && str_contains($u, 'ไม่พบข้อความที่อ่านได้ในหน้านี้');
+        });
+        Http::assertSent(function ($r) {
+            $tool = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool');
+
+            return $tool && str_contains($tool['content'], '"pages":3') && str_contains($tool['content'], '"engine":"google-vision"');
+        });
     }
 
     public function test_assistant_can_read_a_document_file_through_the_vision_model()
