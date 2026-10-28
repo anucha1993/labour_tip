@@ -35,7 +35,7 @@ class AiChatTest extends TestCase
             }
             $t->timestamps();
         });
-        Schema::create('company', function (Blueprint $t) { $t->increments('company_id'); $t->string('company_name'); $t->string('company_tax')->nullable(); $t->string('company_contact_sale')->nullable(); $t->string('company_status')->nullable(); });
+        Schema::create('company', function (Blueprint $t) { $t->increments('company_id'); $t->string('company_name'); $t->string('company_tax')->nullable(); $t->string('company_phone')->nullable(); $t->string('company_contact_sale')->nullable(); $t->string('company_status')->nullable(); $t->string('updated_by')->nullable(); });
         Schema::create('agency', function (Blueprint $t) { $t->increments('agency_id'); $t->string('agency_name'); $t->string('agency_nationality')->nullable(); });
         Schema::create('nationality', function (Blueprint $t) { $t->increments('id'); $t->string('code'); $t->string('name_th'); });
         Schema::create('settings', function (Blueprint $t) { $t->increments('set_id'); $t->string('set_name'); $t->integer('set_expire'); });
@@ -61,6 +61,166 @@ class AiChatTest extends TestCase
         }
         Storage::fake('local');
         Storage::fake('public');
+    }
+
+    public function test_excel_attachment_becomes_a_text_table_and_rows_can_be_updated_in_one_confirmation()
+    {
+        \Illuminate\Support\Facades\Cache::flush();
+        $master = $this->user('MasterAdmin');
+
+        // Build a small xlsx: passport | วีซ่าหมดอายุ | หมายเหตุ   (A1, A2 exist; ZZ9 does not)
+        $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray([['passport', 'วีซ่าหมดอายุ', 'หมายเหตุ'], ['A1', '2031-02-02', 'จากไฟล์'], ['A2', '2032-03-03', ''], ['ZZ9', '2030-01-01', 'ไม่มีคนนี้']], null, 'A1');
+        $sheet->getCell('B2')->setValue(\PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(new \DateTime('2031-02-02')));
+        $sheet->getStyle('B2')->getNumberFormat()->setFormatCode('dd/mm/yyyy');
+        $tmp = tempnam(sys_get_temp_dir(), 'xl') . '.xlsx';
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($tmp);
+
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'b1', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'labour', 'items' => [
+                    ['query' => 'A1', 'changes' => ['labour_visa_date_end' => '2031-02-02', 'labour_note' => 'จากไฟล์']],
+                    ['query' => 'A2', 'changes' => ['labour_visa_date_end' => '2032-03-03']],
+                    ['query' => 'ZZ9', 'changes' => ['labour_visa_date_end' => '2030-01-01']],
+                ]])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'แก้ได้ 2 แถว พิมพ์ ยืนยัน']))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'b2', 'type' => 'function', 'function' => ['name' => 'apply_update', 'arguments' => '{}']]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'บันทึก 2 รายการแล้ว'])),
+        ]);
+
+        $res = $this->actingAs($master)->post(route('ai.message'), [
+            'message' => 'อัปเดตวีซ่าตามไฟล์นี้',
+            'attachment' => new \Illuminate\Http\UploadedFile($tmp, 'visa update.xlsx', null, null, true),
+        ], ['Accept' => 'application/json']);
+        $res->assertOk()->assertJsonPath('tools_used', ['read_attachment', 'propose_update']);
+
+        // The sheet reached the model as text rows with the Excel date rendered as Y-m-d; no OpenAI OCR call was made.
+        Http::assertSentCount(2);
+        Http::assertSent(function ($r) {
+            $u = $r->data()['messages'][1]['content'] ?? '';
+
+            return is_string($u) && str_contains($u, 'ตาราง Excel/CSV') && str_contains($u, 'หัวตาราง: passport | วีซ่าหมดอายุ | หมายเหตุ') && str_contains($u, 'แถว 2: A1 | 2031-02-02 | จากไฟล์') && str_contains($u, '3 แถวข้อมูล');
+        });
+        // Proposal: 2 valid rows + 1 failed, nothing written yet.
+        Http::assertSent(function ($r) {
+            $t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool');
+            $j = $t ? json_decode($t['content'], true) : null;
+
+            return $j && ($j['valid'] ?? 0) === 2 && count($j['failed']) === 1 && str_contains($j['failed'][0]['error'], 'ไม่พบ') && $j['items'][1]['preview'][0]['new'] === '2032-03-03';
+        });
+        $this->assertSame(now()->addDays(200)->toDateString(), LabourModel::find(2)->labour_visa_date_end);
+
+        $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'ยืนยัน'])->assertOk()->assertJsonPath('answer', 'บันทึก 2 รายการแล้ว');
+        $this->assertSame(['2031-02-02', 'จากไฟล์', '2032-03-03'], [LabourModel::find(1)->labour_visa_date_end, LabourModel::find(1)->labour_note, LabourModel::find(2)->labour_visa_date_end]);
+        $this->assertSame(2, DB::table('action_logs')->where('action_type', 'updated')->count());
+        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], '"count":2'));
+        @unlink($tmp);
+    }
+
+    public function test_file_attached_to_a_question_is_read_and_its_text_given_to_the_model()
+    {
+        \Illuminate\Support\Facades\Cache::flush();
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => "1) จำนวนหน้า: 1\n2) ชื่อ-สกุล: SAN WIN\nเลขที่เอกสาร: A2\nวันหมดอายุ: 2031-05-05"]))   // OCR of the attachment
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ไฟล์เป็นพาสปอร์ตของ SAN WIN หมดอายุ 2031-05-05'])),
+        ]);
+
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('passport SAN WIN.pdf', '%PDF-1.4 attached');
+        $res = $this->actingAs($this->user())->post(route('ai.message'), [
+            'message' => 'ตรวจสอบข้อมูลตามไฟล์นี้', 'conversation' => 'att-1',
+            'history' => json_encode([['role' => 'user', 'content' => 'สวัสดี'], ['role' => 'assistant', 'content' => 'สวัสดีครับ']]),
+            'attachment' => $file,
+        ], ['Accept' => 'application/json']);
+        $res->assertOk()->assertJsonPath('tools_used', ['read_attachment']);
+        $this->assertStringContainsString('SAN WIN', $res->json('answer'));
+
+        // The OCR request carried the PDF bytes; the chat request got the extracted text appended to the question + the history.
+        Http::assertSent(fn ($r) => (($r->data()['messages'][1]['content'][1]['file']['filename'] ?? '') !== '') && str_contains($r->data()['messages'][1]['content'][1]['file']['file_data'], base64_encode('%PDF-1.4 attached')));
+        Http::assertSent(function ($r) {
+            $m = $r->data()['messages'] ?? [];
+            $last = end($m);
+
+            return count($m) === 4 && $m[1]['content'] === 'สวัสดี' && is_string($last['content'])
+                && str_starts_with($last['content'], 'ตรวจสอบข้อมูลตามไฟล์นี้') && str_contains($last['content'], 'ไฟล์แนบจากผู้ใช้') && str_contains($last['content'], 'SAN WIN');
+        });
+
+        // Stored under the user's folder, logged with the file name, and bad types are refused.
+        $this->assertCount(1, Storage::disk('local')->files('ai-uploads/7'));
+        $this->assertStringContainsString('passport-san-win.pdf', Storage::disk('local')->files('ai-uploads/7')[0]);
+        $this->assertStringStartsWith('[ไฟล์แนบ: ', AiChatLog::latest('id')->value('question'));
+        $this->actingAs($this->user())->post(route('ai.message'), ['message' => 'x', 'attachment' => \Illuminate\Http\UploadedFile::fake()->create('virus.exe', 5)], ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('attachment');
+    }
+
+    public function test_master_admin_edits_data_in_two_steps_and_members_cannot()
+    {
+        $master = $this->user('MasterAdmin');
+        \Illuminate\Support\Facades\Cache::flush();
+
+        // --- Member: write tools are not offered, and are refused even if the model calls one.
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'm1', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'labour', 'query' => 'A1', 'changes' => ['labour_visa_date_end' => '2031-01-01']])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'แก้ไม่ได้']))
+            // (Http::fake merges stubs, so every turn of this test shares one sequence)
+            // --- MasterAdmin step 1: propose -> preview, nothing written yet.
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'p1', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'labour', 'query' => 'A1', 'changes' => ['visa_date_end' => '15/01/2031', 'company' => 'แสงลิน', 'sex' => 'หญิง', 'status_job' => 'ลาออก', 'resign_date' => '1/11/2569']])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'พิมพ์ ยืนยัน เพื่อบันทึก']))
+            // step 2: the user confirms -> apply
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'a1', 'type' => 'function', 'function' => ['name' => 'apply_update', 'arguments' => '{}']]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'บันทึกแล้ว']))
+            // bad field / ambiguous labour
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'p2', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'labour', 'query' => 'A1', 'changes' => ['labour_id' => '99', 'created_by' => 'x']])]],
+                ['id' => 'p3', 'type' => 'function', 'function' => ['name' => 'propose_update', 'arguments' => json_encode(['entity' => 'company', 'query' => 'เก่ง', 'changes' => ['company_phone' => '02-999-9999']])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'ok'])),
+        ]);
+
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'เปลี่ยนวันหมดอายุวีซ่า A1'])->assertOk();
+        Http::assertSent(fn ($r) => ! in_array('propose_update', array_column(array_column($r->data()['tools'] ?? [], 'function'), 'name'), true));
+        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], 'MasterAdmin'));
+        $this->assertSame(now()->addDays(10)->toDateString(), LabourModel::find(1)->labour_visa_date_end);
+
+        $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'แก้ A1: วีซ่าหมด 15/01/2031 ย้ายไปบริษัทแสงลิน เพศหญิง สถานะลาออก 1/11/2569'])->assertOk();
+        Http::assertSent(fn ($r) => in_array('propose_update', array_column(array_column($r->data()['tools'] ?? [], 'function'), 'name'), true));
+        $proposal = null;
+        Http::assertSent(function ($r) use (&$proposal) {
+            $t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool');
+            if ($t && str_contains($t['content'], '"token"')) {
+                $proposal = json_decode($t['content'], true);
+            }
+
+            return (bool) $t;
+        });
+        $this->assertNotNull($proposal, 'tool result with token');
+        $preview = collect($proposal['preview'])->keyBy('field');
+        $this->assertSame('2031-01-15', $preview['labour_visa_date_end']['new']);
+        $this->assertSame('แสงลินฟู้ดส์ (#2)', $preview['company_id']['new']);
+        $this->assertSame('เก่ง เอ็นจิเนียริ่ง (#1)', $preview['company_id']['old']);
+        $this->assertSame('female', $preview['labour_sex']['new']);
+        $this->assertSame('2026-11-01', $preview['labour_resing_date']['new']);   // Thai year converted
+        $this->assertSame('resign', $preview['labour_status_job']['new']);
+        $this->assertSame('male', LabourModel::find(1)->labour_sex);           // not written yet
+        $this->assertSame(0, DB::table('action_logs')->where('action_type', 'updated')->count());
+
+        $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'ยืนยัน'])->assertOk()->assertJsonPath('answer', 'บันทึกแล้ว');
+        $l = LabourModel::find(1);
+        $this->assertSame(['2031-01-15', '2', 'female', 'resign', '2026-11-01', 'Tester (AI)'], [$l->labour_visa_date_end, (string) $l->company_id, $l->labour_sex, $l->labour_status_job, $l->labour_resing_date, $l->updated_by]);
+        $this->assertSame(1, DB::table('action_logs')->where('action_type', 'updated')->where('model_id', 1)->count());
+        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], '"updated":true'));
+
+        // A second "ยืนยัน" with nothing pending does not write anything; unknown fields are rejected; company edit works.
+        $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'แก้อีก'])->assertOk();
+        Http::assertSent(function ($r) {
+            $tools = collect($r->data()['messages'] ?? [])->where('role', 'tool')->pluck('content');
+
+            return $tools->count() === 2 && str_contains($tools[0], 'ไม่รู้จักฟิลด์') && str_contains($tools[1], '"token"') && str_contains($tools[1], '02-999-9999');
+        });
+        $this->assertNull(\App\Models\company\CompanyModel::find(1)->company_phone);
     }
 
     public function test_google_vision_reads_every_page_and_the_chat_model_structures_it()

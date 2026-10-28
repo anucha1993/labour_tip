@@ -25,7 +25,7 @@
             <div class="chat-empty" id="chatEmpty">
                 <div class="big"><i class="mdi mdi-robot"></i></div>
                 <h5>สวัสดี {{ auth()->user()->name }}</h5>
-                <p class="text-2">ผมอ่านข้อมูลจากระบบโดยตรง (อ่านอย่างเดียว) ลองถามแบบนี้ได้เลย</p>
+                <p class="text-2">ผมอ่านข้อมูลจากระบบโดยตรง อ่านไฟล์เอกสารที่อัปโหลดไว้หรือไฟล์ที่แนบมากับคำถามได้{{ auth()->user()->type === 'MasterAdmin' ? ' และแก้ไขข้อมูลให้ได้หลังคุณยืนยัน' : '' }} ลองถามแบบนี้ได้เลย</p>
                 <div class="chips justify-content-center" id="chatSuggestions">
                     @foreach ($suggestions as $s)
                         <button type="button" data-suggest>{{ $s }}</button>
@@ -34,11 +34,17 @@
             </div>
         </div>
         <form class="chat-input" id="chatForm" data-no-loader>
+            <div class="chat-attach d-none" id="chatAttach">
+                <i class="mdi mdi-paperclip"></i> <span id="chatAttachName"></span>
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger" id="chatAttachClear" title="เอาไฟล์ออก"><i class="mdi mdi-close-circle"></i></button>
+            </div>
             <div class="d-flex gap-2 align-items-end">
+                <input type="file" id="chatFile" class="d-none" accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv,application/pdf,image/*,.sheet,.ms-excel">
+                <button type="button" class="btn btn-soft" id="chatAttachBtn" style="height:46px" title="แนบไฟล์ (PDF, รูป, Excel, CSV ไม่เกิน 15 MB)" {{ $configured ? '' : 'disabled' }}><i class="mdi mdi-paperclip"></i></button>
                 <textarea class="form-control" id="chatText" rows="1" placeholder="พิมพ์คำถาม… (Enter เพื่อส่ง, Shift+Enter ขึ้นบรรทัดใหม่)" {{ $configured ? '' : 'disabled' }}></textarea>
                 <button type="submit" class="btn btn-primary" id="chatSend" style="height:46px" {{ $configured ? '' : 'disabled' }}><i class="mdi mdi-send"></i><span class="d-none d-sm-inline"> ส่ง</span></button>
             </div>
-            <div class="small text-3 mt-2"><i class="mdi mdi-shield"></i> คำถามและผลลัพธ์ที่เกี่ยวข้องจะถูกส่งไปประมวลผลที่ OpenAI · ไฟล์ Excel ที่สร้างเก็บไว้ 24 ชั่วโมง</div>
+            <div class="small text-3 mt-2"><i class="mdi mdi-shield"></i> คำถาม ไฟล์แนบ และผลลัพธ์ที่เกี่ยวข้องจะถูกส่งไปประมวลผลที่ OpenAI{{ config('services.google.vision_key') || config('services.google.translate_key') ? ' และ Google Vision' : '' }} · ไฟล์ Excel และไฟล์แนบเก็บไว้ 24 ชั่วโมง</div>
         </form>
     </div>
 @endsection
@@ -48,6 +54,19 @@
 (function () {
     var wrap = document.getElementById('chatWrap'), log = document.getElementById('chatLog'), form = document.getElementById('chatForm');
     var input = document.getElementById('chatText'), send = document.getElementById('chatSend'), empty = document.getElementById('chatEmpty');
+    var fileInput = document.getElementById('chatFile'), attachBox = document.getElementById('chatAttach'), attachName = document.getElementById('chatAttachName');
+    function setFile(f) {
+        if (f && f.size > 15 * 1024 * 1024) { alert('ไฟล์แนบต้องมีขนาดไม่เกิน 15 MB'); f = null; }
+        if (!f) { fileInput.value = ''; attachBox.classList.add('d-none'); attachName.textContent = ''; return; }
+        attachName.textContent = f.name + ' (' + (f.size / 1024 / 1024).toFixed(2) + ' MB)';
+        attachBox.classList.remove('d-none'); input.focus();
+    }
+    document.getElementById('chatAttachBtn').addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function () { setFile(fileInput.files[0]); });
+    document.getElementById('chatAttachClear').addEventListener('click', function () { setFile(null); });
+    ['dragenter', 'dragover'].forEach(function (ev) { form.addEventListener(ev, function (e) { e.preventDefault(); form.classList.add('is-over'); }); });
+    ['dragleave', 'drop'].forEach(function (ev) { form.addEventListener(ev, function (e) { e.preventDefault(); form.classList.remove('is-over'); }); });
+    form.addEventListener('drop', function (e) { if (e.dataTransfer.files && e.dataTransfer.files[0]) { fileInput.files = e.dataTransfer.files; setFile(fileInput.files[0]); } });
     var endpoint = wrap.dataset.endpoint, userInitial = wrap.dataset.user, userAvatar = wrap.dataset.avatar || '', configured = wrap.dataset.configured === '1';
     var KEY = 'labour-ai-chat';
     var history = [];
@@ -100,23 +119,38 @@
 
     async function ask(text) {
         text = text.trim();
+        var file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+        if (!text && file) text = 'อ่านไฟล์นี้แล้วสรุปให้หน่อย';
         if (!text || !configured || send.disabled) return;
-        addMessage('user', text);
-        history.push({ role: 'user', content: text, time: time() });
+        var shown = file ? '📎 ' + file.name + '\n' + text : text;
+        addMessage('user', shown);
+        history.push({ role: 'user', content: shown, time: time() });
         save();
         input.value = ''; autosize();
         send.disabled = true; input.disabled = true;
         addTyping();
         try {
-            var res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
-                body: JSON.stringify({ message: text, conversation: convo, history: history.slice(0, -1).slice(-20).map(function (m) { return { role: m.role, content: m.content }; }) })
-            });
+            var csrf = document.querySelector('meta[name="csrf-token"]').content;
+            var hist = history.slice(0, -1).slice(-20).map(function (m) { return { role: m.role, content: m.content }; });
+            var res;
+            if (file) {
+                var fd = new FormData();
+                fd.append('message', text); fd.append('conversation', convo); fd.append('history', JSON.stringify(hist)); fd.append('attachment', file);
+                res = await fetch(endpoint, { method: 'POST', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf }, body: fd });
+                setFile(null);
+            } else {
+                res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
+                    body: JSON.stringify({ message: text, conversation: convo, history: hist })
+                });
+            }
             var data = await res.json().catch(function () { return {}; });
             document.getElementById('chatTyping') && document.getElementById('chatTyping').remove();
             if (!res.ok) {
-                addMessage('assistant', '**เกิดข้อผิดพลาด:** ' + (data.error || data.message || ('HTTP ' + res.status)));
+                var errText = data.error || data.message || ('HTTP ' + res.status);
+                if (data.errors) { errText = Object.values(data.errors).map(function (a) { return a.join(' '); }).join(' '); }
+                addMessage('assistant', '**เกิดข้อผิดพลาด:** ' + errText);
             } else {
                 var meta = time() + (data.tools_used && data.tools_used.length ? ' · ใช้เครื่องมือ: ' + data.tools_used.join(', ') : '');
                 addMessage('assistant', data.answer, data.reports, meta);
