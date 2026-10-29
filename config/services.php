@@ -39,6 +39,8 @@ return [
         'translate_key' => env('GOOGLE_TRANSLATE_API_KEY'),
         // Cloud Vision OCR for the AI document reader; falls back to the translate key when unset.
         'vision_key' => env('GOOGLE_VISION_API_KEY'),
+        // OCR through DataCorp when the AI uses DataCorp (same dca_sk_ key) — false = call Google directly
+        'vision_via_datacorp' => env('GOOGLE_VISION_VIA_DATACORP', true),
     ],
 
     'openai' => [

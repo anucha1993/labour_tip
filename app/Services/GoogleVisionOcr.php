@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Services\Ai\AiPaymentRequired;
+use App\Services\Ai\DataCorpBilling;
 use App\Support\PdfInfo;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -9,6 +11,10 @@ use RuntimeException;
 /**
  * Google Cloud Vision OCR (DOCUMENT_TEXT_DETECTION) for PDFs and images.
  * PDFs are read page by page (the sync endpoint takes at most 5 pages per request).
+ *
+ * When the AI goes through DataCorp (OPENAI_BASE_URL=https://datacorpapi.com/v1) the OCR goes there too, with the same
+ * dca_sk_ key (included in the Business plan, billed in credits per page) — no Google key needed in this app.
+ * Set GOOGLE_VISION_VIA_DATACORP=false to keep calling Google directly with GOOGLE_VISION_API_KEY.
  */
 class GoogleVisionOcr
 {
@@ -19,7 +25,12 @@ class GoogleVisionOcr
 
     public function isConfigured(): bool
     {
-        return $this->key() !== '';
+        return $this->viaDataCorp() || $this->key() !== '';
+    }
+
+    private function viaDataCorp(): bool
+    {
+        return filter_var(config('services.google.vision_via_datacorp', true), FILTER_VALIDATE_BOOLEAN) && app(DataCorpBilling::class)->enabled();
     }
 
     /**
@@ -85,6 +96,19 @@ class GoogleVisionOcr
     {
         if (! $this->isConfigured()) {
             throw new RuntimeException('GOOGLE_VISION_API_KEY is not set');
+        }
+        if ($this->viaDataCorp()) {
+            // https://vision.googleapis.com/v1/files:annotate → https://datacorpapi.com/v1/vision/files:annotate
+            $dc = rtrim((string) config('services.openai.base_url'), '/') . '/vision/' . basename($url);
+            $res = Http::withToken(config('services.openai.key'))->acceptJson()->asJson()->timeout(180)->post($dc, $body);
+            if (! $res->successful()) {
+                if ($payUrl = $res->json('error.action_url')) {
+                    throw new AiPaymentRequired(explode(' — ', (string) $res->json('error.message'))[0], (string) $res->json('error.code'), $payUrl, $res->status());
+                }
+                throw new RuntimeException('OCR (DataCorp) ' . $res->status() . ': ' . ($res->json('error.message') ?? mb_substr($res->body(), 0, 200)));
+            }
+
+            return (array) $res->json();
         }
         $res = Http::asJson()->timeout(90)->post($url . '?key=' . urlencode($this->key()), $body);
         if (! $res->successful()) {
