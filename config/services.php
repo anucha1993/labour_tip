@@ -46,6 +46,8 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        // true = AI goes through DataCorp (plan/credits bar + payment links); default: on when base_url is datacorpapi.com
+        'datacorp' => env('OPENAI_DATACORP'),
     ],
 
 ];

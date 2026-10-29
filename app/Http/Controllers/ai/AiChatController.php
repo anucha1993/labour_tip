@@ -5,6 +5,8 @@ namespace App\Http\Controllers\ai;
 use App\Http\Controllers\Controller;
 use App\Models\AiChatLog;
 use App\Models\labour\LabourDocument;
+use App\Services\Ai\AiPaymentRequired;
+use App\Services\Ai\DataCorpBilling;
 use App\Services\Ai\LabourAssistant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -12,7 +14,7 @@ use Illuminate\Support\Facades\Storage;
 
 class AiChatController extends Controller
 {
-    public function __construct(private LabourAssistant $assistant)
+    public function __construct(private LabourAssistant $assistant, private DataCorpBilling $billing)
     {
         $this->middleware('auth');
     }
@@ -22,6 +24,7 @@ class AiChatController extends Controller
         return view('ai.chat', [
             'configured' => $this->assistant->isConfigured(),
             'model' => config('services.openai.model', 'gpt-4o-mini'),
+            'billing' => $this->billing->enabled(),
             'suggestions' => [
                 'มีแรงงานกี่คนที่วีซ่าจะหมดอายุภายใน 30 วัน',
                 'สรุปจำนวนแรงงานที่ทำงานอยู่แยกตามสัญชาติ',
@@ -63,6 +66,20 @@ class AiChatController extends Controller
 
         try {
             $result = $this->assistant->ask($request->input('message'), $data['history'] ?? [], $request->user(), $attachment);
+        } catch (AiPaymentRequired $e) {
+            // plan expired / credits used up / unpaid → the page shows a payment card
+            $this->billing->forget();
+            $this->record($request, $data, $started, null, $e->getMessage());
+
+            return response()->json([
+                'error' => $e->userMessage(),
+                'payment' => [
+                    'reason' => $e->reason,
+                    'title' => $e->userMessage(),
+                    'detail' => $e->getMessage(),
+                    'pay_url' => $this->canPay($request) ? $e->payUrl : null,
+                ],
+            ], 402);
         } catch (\Throwable $e) {
             Log::error('AI chat failed', ['user' => $request->user()->id, 'error' => $e->getMessage()]);
             $this->record($request, $data, $started, null, $e->getMessage());
@@ -74,6 +91,26 @@ class AiChatController extends Controller
         $this->record($request, $data, $started, $result);
 
         return response()->json($result);
+    }
+
+    /** Plan, credits and payment / upgrade links of the AI key (DataCorp) for the bar on the chat page. */
+    public function plan(Request $request)
+    {
+        $s = $this->billing->status($request->boolean('fresh'));
+        if ($s === null) {
+            return response()->json(['enabled' => false]);
+        }
+        if (! $this->canPay($request)) {
+            $s['upgrade_url'] = $s['pay_url'] = null; // only MasterAdmin pays; others are told to contact them
+        }
+
+        return response()->json(['enabled' => true, 'can_pay' => $this->canPay($request)] + $s);
+    }
+
+    /** Paying for the AI service is a company decision → MasterAdmin only. */
+    private function canPay(Request $request): bool
+    {
+        return optional($request->user())->type === 'MasterAdmin';
     }
 
     /**

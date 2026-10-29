@@ -76,6 +76,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/ai-chat', [AiChatController::class, 'index'])->name('ai.chat');
     Route::post('/ai-chat/message', [AiChatController::class, 'message'])->name('ai.message')->middleware('throttle:30,1');
     Route::get('/ai-chat/report/{file}', [AiChatController::class, 'report'])->name('ai.report');
+    Route::get('/ai-chat/plan', [AiChatController::class, 'plan'])->name('ai.plan')->middleware('throttle:30,1');
 
     // ---------------------------------------------------------------- Reports & exports
     Route::get('/Report', [ReportLabourController::class, 'index'])->name('report.index');

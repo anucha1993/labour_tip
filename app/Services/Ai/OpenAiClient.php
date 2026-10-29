@@ -51,12 +51,21 @@ class OpenAiClient
             $payload['tool_choice'] = 'auto';
         }
 
-        $response = Http::withToken($this->apiKey)
-            ->timeout((int) config('services.openai.timeout', 60))
-            ->retry(2, 500, fn ($e) => $e instanceof \Illuminate\Http\Client\ConnectionException)
-            ->post($this->baseUrl . '/chat/completions', $payload);
+        try {
+            $response = Http::withToken($this->apiKey)
+                ->timeout((int) config('services.openai.timeout', 60))
+                ->retry(2, 500, fn ($e) => $e instanceof \Illuminate\Http\Client\ConnectionException)
+                ->post($this->baseUrl . '/chat/completions', $payload);
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            $response = $e->response; // Laravel 8: retry() throws on any HTTP error — read the error body below
+        }
 
         if (! $response->successful()) {
+            // DataCorp: plan expired / credits used up / unpaid → error.action_url = payment page
+            if ($payUrl = $response->json('error.action_url')) {
+                $message = explode(' — ', (string) $response->json('error.message'))[0];
+                throw new AiPaymentRequired($message, (string) $response->json('error.code'), $payUrl, $response->status());
+            }
             $error = $response->json('error.message') ?? $response->body();
             throw new RuntimeException('OpenAI API error (' . $response->status() . '): ' . mb_substr((string) $error, 0, 300));
         }
