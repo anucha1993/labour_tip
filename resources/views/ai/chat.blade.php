@@ -244,15 +244,24 @@
             planBox.classList.toggle('alert-warning', !s.blocked && pct >= 90);
             planBox.classList.toggle('alert-danger', !!s.blocked);
             document.getElementById('aiPlanName').textContent = 'แพ็กเกจ AI: ' + s.plan;
-            document.getElementById('aiPlanRenew').textContent = s.renews_at ? '· ' + (s.blocked ? 'หมดอายุ ' : 'ถึง ') + String(s.renews_at).slice(0, 10) : '';
+            document.getElementById('aiPlanRenew').textContent = s.renews_at ? '· ' + (s.blocked ? 'หมดอายุ ' : /trial\s*$/i.test(s.plan || '') ? 'ทดลองใช้ถึง ' : 'ต่ออายุรอบถัดไป ') + String(s.renews_at).slice(0, 10) : '';
             var bar = document.getElementById('aiPlanBar');
             bar.style.width = pct + '%'; bar.className = 'progress-bar' + (pct >= 100 || s.blocked ? ' bg-danger' : pct >= 90 ? ' bg-warning' : '');
             document.getElementById('aiPlanUsage').textContent = s.blocked ? (s.message || 'ใช้งานไม่ได้ — ต้องชำระเงิน')
                 : (s.included ? 'ใช้ไป ' + s.used.toLocaleString() + ' / ' + s.included.toLocaleString() + ' credits (เหลือ ' + (s.remaining || 0).toLocaleString() + ')' : 'ใช้ไป ' + s.used.toLocaleString() + ' credits');
-            var btn = document.getElementById('aiPlanPay'), url = s.blocked ? s.pay_url : s.upgrade_url;
+            // ปุ่มแสดงเมื่อ: ถูกบล็อก (ชำระเงิน) · ทดลองใช้ (สมัครจริง) · ใกล้หมดอายุภายใน 3 วัน (ต่ออายุ) — แพ็กเกจที่จ่ายแล้วและยังไม่ใกล้หมด ไม่มีปุ่ม
+            var trial = /trial\s*$/i.test(s.plan || '');
+            var btn = document.getElementById('aiPlanPay'), url = s.blocked ? s.pay_url : ((trial || s.renew_due) ? s.upgrade_url : null);
+            if (s.renew_due && !s.blocked) {
+                planBox.classList.remove('alert-info'); planBox.classList.add('alert-warning');
+                document.getElementById('aiPlanRenew').textContent = '· ' + (s.days_left ? 'หมดอายุในอีก ' + s.days_left + ' วัน' : 'หมดอายุวันนี้') +
+                    (s.auto_renew ? ' (ตัดบัตรต่ออายุอัตโนมัติ)' : '');
+            }
             if (url) {
                 btn.href = url;
-                btn.innerHTML = '<i class="mdi mdi-credit-card-outline"></i> ' + (s.blocked ? 'ชำระเงิน / ใช้งานต่อ' : 'สมัคร ' + s.upgrade_plan + (s.upgrade_price ? ' ฿' + Number(s.upgrade_price).toLocaleString() + '/เดือน' : ''));
+                btn.innerHTML = '<i class="mdi mdi-credit-card-outline"></i> ' + (s.blocked ? 'ชำระเงิน / ใช้งานต่อ'
+                    : s.renew_due && !trial ? 'ต่ออายุ ' + s.upgrade_plan
+                    : 'สมัคร ' + s.upgrade_plan + (s.upgrade_price ? ' ฿' + Number(s.upgrade_price).toLocaleString() + '/เดือน' : ''));
                 btn.classList.remove('d-none');
             } else btn.classList.add('d-none');
             document.getElementById('aiPlanAsk').classList.toggle('d-none', !!s.can_pay || !(s.blocked || /trial/i.test(s.plan)));

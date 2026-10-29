@@ -63,6 +63,9 @@ class DataCorpBilling
                 'upgrade_plan' => $b['upgrade_plan'] ?? null,
                 'upgrade_price' => $b['upgrade_price_thb'] ?? null,
                 'pay_url' => $j['action_url'] ?? ($b['checkout_url'] ?? ($b['pay_url'] ?? null)),
+                'days_left' => $b['days_left'] ?? null,
+                'renew_due' => (bool) ($b['renew_due'] ?? false),   // ใกล้หมดอายุ (ภายใน 3 วัน)
+                'auto_renew' => (bool) ($b['auto_renew'] ?? false), // Polar ตัดบัตรต่อให้เอง
             ];
         });
     }
