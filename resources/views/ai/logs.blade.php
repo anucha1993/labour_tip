@@ -35,6 +35,7 @@
         <div class="col-6 col-md-3"><x-stat-card label="ผู้ใช้ที่ถาม" :value="(int) ($summary->users ?? 0)" icon="mdi-account-multiple" color="info" /></div>
         <div class="col-6 col-md-3"><x-stat-card label="Token ที่ใช้" :value="(int) ($summary->tokens ?? 0)" icon="mdi-counter" color="warning" /></div>
         <div class="col-6 col-md-3"><x-stat-card label="ตอบไม่สำเร็จ" :value="(int) ($summary->errors ?? 0)" icon="mdi-alert-circle" color="{{ ($summary->errors ?? 0) > 0 ? 'danger' : 'secondary' }}" :href="route('ai.logs', ['status' => 'error'])" /></div>
+        <div class="col-6 col-md-3"><x-stat-card label="ผู้ใช้ให้คะแนน 👍 / 👎" :value="(int) ($summary->good ?? 0) . ' / ' . (int) ($summary->bad ?? 0)" icon="mdi-thumb-up" color="{{ ($summary->bad ?? 0) > 0 ? 'warning' : 'success' }}" :href="route('ai.logs', ['rating' => 'bad'])" /></div>
     </div>
 
     <div class="row g-3">
@@ -78,6 +79,13 @@
                                 <option value="error" {{ $f['status'] === 'error' ? 'selected' : '' }}>ผิดพลาด</option>
                             </select>
                         </div>
+                        <div class="col-6 col-md-2">
+                            <select name="rating" class="form-select">
+                                <option value="">ทุกคะแนน</option>
+                                <option value="good" {{ $f['rating'] === 'good' ? 'selected' : '' }}>👍 ตอบดี</option>
+                                <option value="bad" {{ $f['rating'] === 'bad' ? 'selected' : '' }}>👎 ตอบไม่ดี</option>
+                            </select>
+                        </div>
                         <div class="col-6 col-md-2"><input type="date" name="from" class="form-control" value="{{ $f['from'] }}" title="ตั้งแต่วันที่"></div>
                         <div class="col-6 col-md-2"><input type="date" name="to" class="form-control" value="{{ $f['to'] }}" title="ถึงวันที่"></div>
                         <div class="col-12 col-md-auto d-flex gap-2">
@@ -117,6 +125,7 @@
                                         </td>
                                         <td>
                                             <div class="ai-q clamp">{{ $log->question }}</div>
+                                            @if ($log->rating === 1)<span class="badge-soft badge-soft-success mt-1" title="{{ $log->feedback }}"><i class="mdi mdi-thumb-up"></i> ตอบดี</span>@elseif ($log->rating === -1)<span class="badge-soft badge-soft-warning mt-1" title="{{ $log->feedback }}"><i class="mdi mdi-thumb-down"></i> ตอบไม่ดี{{ $log->feedback ? ': ' . \Illuminate\Support\Str::limit($log->feedback, 60) : '' }}</span>@endif
                                             @if ($log->status === 'error')
                                                 <span class="badge-soft badge-soft-danger mt-1"><i class="mdi mdi-alert"></i> ผิดพลาด</span>
                                             @elseif ($log->reports)
@@ -138,7 +147,7 @@
                                             <button type="button" class="btn btn-soft btn-sm" data-ai-view
                                                 data-user="{{ optional($log->user)->name ?? '-' }}" data-time="{{ fmt_datetime($log->created_at) }}"
                                                 data-question="{{ $log->question }}" data-answer="{{ $log->answer }}" data-error="{{ $log->error }}"
-                                                data-tools="{{ implode(', ', $log->tools_used ?? []) }}" data-tokens="{{ $log->prompt_tokens }} + {{ $log->completion_tokens }}">
+                                                data-tools="{{ implode(', ', $log->tools_used ?? []) }}" data-tokens="{{ $log->prompt_tokens }} + {{ $log->completion_tokens }}" data-rating="{{ $log->rating === 1 ? '👍' : ($log->rating === -1 ? '👎' : '') }}" data-feedback="{{ $log->feedback }}">
                                                 <i class="mdi mdi-eye"></i> ดู
                                             </button>
                                         </td>
@@ -211,7 +220,7 @@
             btn.addEventListener('click', function () {
                 var d = btn.dataset;
                 title.textContent = d.user + ' · ' + d.time;
-                meta.textContent = (d.tools ? 'เครื่องมือ: ' + d.tools + ' · ' : '') + 'token: ' + d.tokens;
+                meta.textContent = (d.tools ? 'เครื่องมือ: ' + d.tools + ' · ' : '') + 'token: ' + d.tokens + (d.rating ? ' · คะแนน ' + d.rating + (d.feedback ? ' (' + d.feedback + ')' : '') : '');
                 var html = '<div class="ai-bubble user"><div class="who"><i class="mdi mdi-account"></i> ' + esc(d.user) + '</div><div class="ai-q">' + esc(d.question) + '</div></div>';
                 if (d.error) {
                     html += '<div class="ai-bubble error"><div class="who"><i class="mdi mdi-alert"></i> ผิดพลาด</div><div class="ai-q">' + esc(d.error) + '</div></div>';

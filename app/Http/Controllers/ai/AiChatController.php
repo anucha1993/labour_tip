@@ -88,9 +88,24 @@ class AiChatController extends Controller
         }
 
         Log::info('AI chat', ['user' => $request->user()->id, 'tools' => $result['tools_used'], 'usage' => $result['usage']]);
-        $this->record($request, $data, $started, $result);
+        $log = $this->record($request, $data, $started, $result);
 
-        return response()->json($result);
+        return response()->json($result + ['log_id' => $log ? $log->id : null]);
+    }
+
+    /** 👍 / 👎 on an answer (own answers only; MasterAdmin may rate any). Reviewed on the AI log page. */
+    public function feedback(Request $request, AiChatLog $log)
+    {
+        abort_unless($log->user_id === $request->user()->id || $request->user()->type === 'MasterAdmin', 403);
+        $data = $request->validate([
+            'rating' => ['required', 'integer', 'in:-1,1'],
+            'feedback' => ['nullable', 'string', 'max:500'],
+        ]);
+        $log->rating = (int) $data['rating'];
+        $log->feedback = trim((string) ($data['feedback'] ?? '')) ?: null;
+        $log->save();
+
+        return response()->json(['ok' => true, 'rating' => $log->rating]);
     }
 
     /** Plan, credits and payment / upgrade links of the AI key (DataCorp) for the bar on the chat page. */
@@ -140,10 +155,10 @@ class AiChatController extends Controller
     }
 
     /** Keep a copy of every exchange so MasterAdmin can review what people ask (never blocks the reply). */
-    private function record(Request $request, array $data, float $started, ?array $result, ?string $error = null): void
+    private function record(Request $request, array $data, float $started, ?array $result, ?string $error = null): ?AiChatLog
     {
         try {
-            AiChatLog::create([
+            return AiChatLog::create([
                 'user_id' => $request->user()->id,
                 'conversation_id' => $data['conversation'] ?? null,
                 'question' => $data['message'],
@@ -160,6 +175,8 @@ class AiChatController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::warning('AI chat log not saved', ['error' => $e->getMessage()]);
+
+            return null;
         }
     }
 

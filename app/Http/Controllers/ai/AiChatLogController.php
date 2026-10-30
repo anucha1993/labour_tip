@@ -27,6 +27,8 @@ class AiChatLogController extends Controller
         $to = $request->input('to');
         $conversation = trim((string) $request->input('conversation'));
         $tool = trim((string) $request->input('tool'));
+        $hasRating = \Illuminate\Support\Facades\Schema::hasColumn('ai_chat_logs', 'rating'); // until the rating migration has run
+        $rating = $hasRating && in_array($request->input('rating'), ['good', 'bad'], true) ? $request->input('rating') : null;
 
         $query = AiChatLog::query()
             ->with('user')
@@ -40,6 +42,7 @@ class AiChatLogController extends Controller
             })
             ->when($userId, fn ($q, $v) => $q->where('user_id', $v))
             ->when($status, fn ($q, $v) => $q->where('status', $v))
+            ->when($rating, fn ($q, $v) => $q->where('rating', $v === 'good' ? 1 : -1))
             ->when($tool, fn ($q, $v) => $q->whereRaw('tools_used LIKE ? ESCAPE ?', ['%"' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $v) . '"%', '\\']))
             ->when($conversation, fn ($q, $v) => $q->where('conversation_id', $v))
             ->when($from, fn ($q, $v) => $q->whereDate('created_at', '>=', $v))
@@ -52,7 +55,7 @@ class AiChatLogController extends Controller
             ->withQueryString();
 
         $summary = (clone $query)
-            ->selectRaw('COUNT(*) AS total, SUM(status = "error") AS errors, SUM(prompt_tokens + completion_tokens) AS tokens, COUNT(DISTINCT user_id) AS users')
+            ->selectRaw('COUNT(*) AS total, SUM(status = "error") AS errors, SUM(prompt_tokens + completion_tokens) AS tokens, COUNT(DISTINCT user_id) AS users' . ($hasRating ? ', SUM(rating = 1) AS good, SUM(rating = -1) AS bad' : ''))
             ->first();
 
         $topUsers = AiChatLog::query()
@@ -69,8 +72,8 @@ class AiChatLogController extends Controller
             'summary' => $summary,
             'topUsers' => $topUsers,
             'users' => User::orderBy('name')->get(['id', 'name']),
-            'tools' => ['count_labours', 'search_labours', 'get_labour_detail', 'list_companies', 'list_agencies', 'create_excel_report'],
-            'filters' => compact('search', 'userId', 'status', 'from', 'to', 'conversation', 'tool'),
+            'tools' => ['count_labours', 'search_labours', 'get_labour_detail', 'read_labour_document', 'read_attachment', 'get_expiry_timeline', 'get_change_history', 'check_data_quality', 'propose_update', 'apply_update', 'list_companies', 'list_agencies', 'create_excel_report'],
+            'filters' => compact('search', 'userId', 'status', 'from', 'to', 'conversation', 'tool', 'rating'),
         ]);
     }
 }

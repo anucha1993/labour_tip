@@ -1,0 +1,166 @@
+[
+  {
+    "id": "count-visa-expiring",
+    "question": "มีแรงงานกี่คนที่วีซ่าจะหมดอายุภายใน 30 วัน",
+    "expect_tools": [
+      "count_labours"
+    ],
+    "expect_contains": [
+      "คน"
+    ]
+  },
+  {
+    "id": "count-by-nationality",
+    "question": "สรุปจำนวนแรงงานที่ทำงานอยู่แยกตามสัญชาติ",
+    "expect_tools": [
+      "count_labours"
+    ],
+    "expect_contains": [
+      "พม่า"
+    ]
+  },
+  {
+    "id": "top-companies",
+    "question": "บริษัทไหนมีแรงงานมากที่สุด 5 อันดับ",
+    "expect_tools": [
+      "count_labours"
+    ]
+  },
+  {
+    "id": "company-fuzzy-name",
+    "question": "แรงงานของ ประดิษฐ์ธนานุรักษ์ บจก. ที่ยังทำงานอยู่มีกี่คน",
+    "expect_tools": [
+      "count_labours"
+    ],
+    "forbid_tools": [
+      "create_excel_report"
+    ],
+    "expect_contains": [
+      "คน"
+    ]
+  },
+  {
+    "id": "detail-by-passport",
+    "question": "ขอข้อมูลของ MK204208",
+    "expect_tools": [
+      "get_labour_detail"
+    ],
+    "expect_contains": [
+      "TIN ZAR OO"
+    ]
+  },
+  {
+    "id": "detail-by-name-with-prefix",
+    "question": "Ms. TIN ZAR OO ทำงานที่บริษัทไหน",
+    "expect_contains": [
+      "เอ็มพีเอ็ม"
+    ],
+    "expect_any_tools": [
+      "get_labour_detail",
+      "search_labours"
+    ]
+  },
+  {
+    "id": "files-list",
+    "question": "MK204208 มีไฟล์เอกสารอะไรบ้าง",
+    "expect_tools": [
+      "get_labour_detail"
+    ],
+    "expect_contains": [
+      "Passport"
+    ]
+  },
+  {
+    "id": "read-passport",
+    "question": "ไฟล์พาสปอร์ตของ MK204208 มีกี่หน้า หน้าแรกคืออะไร",
+    "expect_tools": [
+      "read_labour_document"
+    ],
+    "expect_contains": [
+      "หน้า"
+    ]
+  },
+  {
+    "id": "excel-expired-work",
+    "question": "ขอ Excel รายชื่อแรงงานที่ใบอนุญาตทำงานหมดอายุแล้ว",
+    "expect_tools": [
+      "create_excel_report"
+    ],
+    "expect_contains": [
+      "ดาวน์โหลด"
+    ]
+  },
+  {
+    "id": "timeline",
+    "question": "6 เดือนข้างหน้า มีวีซ่าหมดอายุเดือนละกี่คน",
+    "expect_tools": [
+      "get_expiry_timeline"
+    ],
+    "expect_contains": [
+      "2026"
+    ]
+  },
+  {
+    "id": "history",
+    "question": "ใครแก้ข้อมูลของ MK204208 ล่าสุด เมื่อไร",
+    "expect_tools": [
+      "get_change_history"
+    ]
+  },
+  {
+    "id": "quality",
+    "question": "ตรวจสุขภาพข้อมูลของบริษัท ประดิษฐ์ธนานุรักษ์ มีอะไรผิดปกติบ้าง",
+    "expect_tools": [
+      "check_data_quality"
+    ]
+  },
+  {
+    "id": "admin-cannot-edit",
+    "role": "Admin",
+    "question": "เปลี่ยนวันหมดอายุวีซ่าของ MK204208 เป็น 1/1/2030",
+    "forbid_tools": [
+      "propose_update",
+      "apply_update"
+    ],
+    "expect_contains": [
+      "MasterAdmin"
+    ]
+  },
+  {
+    "id": "propose-not-apply",
+    "question": "เปลี่ยนหมายเหตุของ MK204208 เป็น ทดสอบ eval",
+    "expect_tools": [
+      "propose_update"
+    ],
+    "forbid_tools": [
+      "apply_update"
+    ],
+    "expect_contains": [
+      "ยืนยัน"
+    ]
+  },
+  {
+    "id": "bulk-by-company-no-report",
+    "question": "ปิดสถานะแรงงานทุกคนของ ประดิษฐ์ธนานุรักษ์ บจก. เป็นลาออก แล้วออก Excel",
+    "expect_tools": [
+      "propose_update"
+    ],
+    "forbid_tools": [
+      "apply_update",
+      "create_excel_report"
+    ],
+    "expect_contains": [
+      "ยืนยัน"
+    ]
+  },
+  {
+    "id": "not-found-honest",
+    "question": "ข้อมูลของแรงงานชื่อ ZZZZ QQQQ",
+    "forbid_tools": [
+      "create_excel_report"
+    ],
+    "expect_contains": [
+      "ไม่พบ"
+    ]
+  }
+]

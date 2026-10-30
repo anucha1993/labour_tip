@@ -24,7 +24,7 @@ class AiChatTest extends TestCase
 
         config(['database.connections.testing_sqlite' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
         config(['database.default' => 'testing_sqlite']);
-        config(['services.openai.key' => 'test-key', 'services.openai.model' => 'gpt-test']);
+        config(['services.openai.key' => 'test-key', 'services.openai.model' => 'gpt-test', 'services.openai.base_url' => 'https://api.openai.com/v1', 'services.openai.datacorp' => false]);
         config(['services.google.vision_key' => '', 'services.google.translate_key' => '']); // no Google Vision unless a test enables it
         DB::purge('testing_sqlite');
 
@@ -39,7 +39,7 @@ class AiChatTest extends TestCase
         Schema::create('agency', function (Blueprint $t) { $t->increments('agency_id'); $t->string('agency_name'); $t->string('agency_nationality')->nullable(); });
         Schema::create('nationality', function (Blueprint $t) { $t->increments('id'); $t->string('code'); $t->string('name_th'); });
         Schema::create('settings', function (Blueprint $t) { $t->increments('set_id'); $t->string('set_name'); $t->integer('set_expire'); });
-        Schema::create('ai_chat_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('conversation_id')->nullable(); $t->text('question'); $t->text('answer')->nullable(); $t->text('tools_used')->nullable(); $t->text('reports')->nullable(); $t->integer('prompt_tokens')->default(0); $t->integer('completion_tokens')->default(0); $t->integer('duration_ms')->default(0); $t->string('status')->default('ok'); $t->text('error')->nullable(); $t->string('ip')->nullable(); $t->timestamp('created_at')->nullable(); });
+        Schema::create('ai_chat_logs', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('conversation_id')->nullable(); $t->text('question'); $t->text('answer')->nullable(); $t->text('tools_used')->nullable(); $t->text('reports')->nullable(); $t->integer('prompt_tokens')->default(0); $t->integer('completion_tokens')->default(0); $t->integer('duration_ms')->default(0); $t->string('status')->default('ok'); $t->text('error')->nullable(); $t->integer('rating')->nullable(); $t->string('feedback')->nullable(); $t->string('ip')->nullable(); $t->timestamp('created_at')->nullable(); });
         Schema::create('users', function (Blueprint $t) { $t->increments('id'); $t->string('name'); $t->string('email')->nullable(); $t->string('password')->nullable(); $t->string('type')->nullable(); $t->string('status')->nullable(); $t->timestamps(); });
         Schema::create('labour_documents', function (Blueprint $t) { $t->bigIncrements('id'); $t->unsignedBigInteger('labour_id'); $t->string('name'); $t->string('disk'); $t->string('path'); $t->string('original_name')->nullable(); $t->unsignedBigInteger('size')->nullable(); $t->string('mime')->nullable(); $t->string('legacy_column')->nullable(); $t->integer('sort_order')->default(0); $t->unsignedBigInteger('uploaded_by')->nullable(); $t->timestamps(); });
         \App\Models\labour\LabourDocument::forgetTableReady();
@@ -61,6 +61,70 @@ class AiChatTest extends TestCase
         }
         Storage::fake('local');
         Storage::fake('public');
+    }
+
+    public function test_insight_tools_history_timeline_and_data_quality()
+    {
+        $svc = app(LabourQueryService::class);
+
+        // timeline: A1 visa +10d, A2 +200d (job); A3 expired (job); A4 +3d but resigned -> excluded
+        $t = $svc->expiryTimeline('visa', 7);
+        $this->assertSame(1, $t['expired_already']);
+        $this->assertSame(2, $t['total_upcoming']);
+        $this->assertSame(1, collect($t['months'])->firstWhere('month', now()->addDays(10)->format('Y-m'))['total']);
+        $this->assertSame(1, collect($t['months'])->firstWhere('month', now()->addDays(200)->format('Y-m'))['total']);
+        $grouped = $svc->expiryTimeline('visa', 7, 'company');
+        $this->assertSame('เก่ง เอ็นจิเนียริ่ง', collect($grouped['months'])->firstWhere('month', now()->addDays(10)->format('Y-m'))['groups'][0]['group']);
+        $this->assertArrayHasKey('error', $svc->expiryTimeline('bogus'));
+
+        // data quality: nobody has a birthday; A3 works with an expired visa; nobody has a passport expiry
+        $q = $svc->dataQualityCheck(['company' => 'แสงลิน']);
+        $this->assertSame(2, $q['checked']);
+        $issues = collect($q['issues'])->keyBy('check');
+        $this->assertSame(2, $issues['no_birthday']['count']);
+        $this->assertSame(1, $issues['expired_but_working']['count']);
+        $this->assertStringContainsString('RATH CHHON', $issues['expired_but_working']['examples'][0]);
+        $this->assertSame(1, $issues['no_passport_end']['count']);   // only A3 is still working at this company
+
+        // change history: an update is logged by the model observer
+        $this->actingAs($this->user('MasterAdmin'));
+        LabourModel::find(1)->update(['labour_visa_number' => 'V-NEW']);
+        $h = $svc->changeHistory('A1');
+        $this->assertSame(2, $h['found']);   // created (setUp) + updated, newest first
+        $this->assertSame('แก้ไข', $h['rows'][0]['action']);
+        $this->assertSame(' → V-NEW', $h['rows'][0]['changes']['เลขที่วีซ่า']);
+        $this->assertStringContainsString('AUNG MYO', $h['rows'][0]['labour']);
+        $this->assertSame(0, $svc->changeHistory('NOBODY')['found']);
+    }
+
+    public function test_answers_carry_follow_up_suggestions_and_can_be_rated()
+    {
+        DB::table('users')->insert(['id' => 7, 'name' => 'Tester', 'type' => 'Member']);
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
+                ['id' => 'd1', 'type' => 'function', 'function' => ['name' => 'get_labour_detail', 'arguments' => json_encode(['query' => 'A1'])]]]]))
+            ->push($this->openAiReply(['role' => 'assistant', 'content' => 'AUNG MYO ทำงานที่ เก่ง เอ็นจิเนียริ่ง'])),
+        ]);
+
+        $res = $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'ข้อมูลของ A1']);
+        $res->assertOk()->assertJsonPath('suggestions.0', 'อ่านไฟล์พาสปอร์ตของคนนี้');
+        $logId = $res->json('log_id');
+        $this->assertNotNull($logId);
+
+        $this->actingAs($this->user())->postJson(route('ai.feedback', $logId), ['rating' => -1, 'feedback' => 'ไม่ได้บอกเลขพาสปอร์ต'])->assertOk();
+        $log = AiChatLog::find($logId);
+        $this->assertSame([-1, 'ไม่ได้บอกเลขพาสปอร์ต'], [$log->rating, $log->feedback]);
+        $this->actingAs($this->user())->postJson(route('ai.feedback', $logId), ['rating' => 5])->assertStatus(422);
+
+        // another member cannot rate someone else's answer; MasterAdmin can
+        $other = new User(['name' => 'Other', 'email' => 'o@test.local', 'type' => 'Member', 'status' => 'enable']);
+        $other->id = 8;
+        $this->actingAs($other)->postJson(route('ai.feedback', $logId), ['rating' => 1])->assertForbidden();
+        $this->actingAs($this->user('MasterAdmin'))->postJson(route('ai.feedback', $logId), ['rating' => 1])->assertOk();
+
+        // and the log page can filter on it
+        $this->actingAs($this->user('MasterAdmin'))->get(route('ai.logs', ['rating' => 'good']))->assertOk()->assertSee('ข้อมูลของ A1');
+        $this->actingAs($this->user('MasterAdmin'))->get(route('ai.logs', ['rating' => 'bad']))->assertOk()->assertDontSee('ข้อมูลของ A1');
     }
 
     public function test_bulk_update_by_filter_covers_every_matching_worker_after_one_confirmation()

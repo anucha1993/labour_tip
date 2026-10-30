@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Models\ActionLog;
 use App\Models\labour\LabourDocument;
 use App\Models\labour\LabourModel;
 use App\Services\ExpiryService;
@@ -375,6 +376,149 @@ class LabourQueryService
             'มีไฟล์อยู่จริง' => $d->exists(),
             'open_url' => $d->id ? route('labour.document.open', $d->id) : route('labour.document.openLegacy', [$labourId, $d->legacy_column]),
         ])->values()->all();
+    }
+
+    // ------------------------------------------------------------------ insight tools
+
+    /** Who changed what on a labour (action_logs), newest first. $query empty = all labours. */
+    public function changeHistory(string $query, ?string $from = null, ?string $to = null, int $limit = 20): array
+    {
+        $ids = [];
+        if (trim($query) !== '') {
+            $ids = $this->build(['keyword' => $query])->limit(20)->pluck('labour.labour_id')->all();
+            if (! $ids) {
+                return ['found' => 0, 'rows' => [], 'message' => 'ไม่พบแรงงานตามคำค้น'];
+            }
+        }
+        $logs = ActionLog::query()->with('user')
+            ->where('model_type', LabourModel::class)
+            ->when($ids, fn ($q) => $q->whereIn('model_id', $ids))
+            ->when($from, fn ($q, $v) => $q->whereDate('created_at', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('created_at', '<=', $v))
+            ->orderByDesc('id')->limit(max(1, min($limit, 50)))->get();
+
+        $names = LabourModel::whereIn('labour_id', $logs->pluck('model_id')->unique())->get(['labour_id', 'labour_prefix', 'labour_fullname', 'labour_passport_number'])->keyBy('labour_id');
+        $labels = array_map(fn ($f) => $f[0], DataUpdateService::LABOUR_FIELDS) + ['labour_file_passport' => 'ไฟล์พาสปอร์ต', 'labour_file_visa' => 'ไฟล์วีซ่า', 'labour_file_work' => 'ไฟล์ใบอนุญาต', 'labour_photo' => 'รูปแรงงาน', 'company_id' => 'บริษัท (id)'];
+        $actions = ['created' => 'เพิ่ม', 'updated' => 'แก้ไข', 'deleted' => 'ลบ'];
+
+        $rows = $logs->map(function (ActionLog $l) use ($names, $labels, $actions) {
+            $n = $names->get($l->model_id);
+            $changes = [];
+            $new = is_array($l->new_values) ? $l->new_values : [];
+            $old = is_array($l->old_values) ? $l->old_values : [];
+            foreach (array_keys($new ?: $old) as $col) {
+                if (in_array($col, ['updated_at', 'created_at', 'updated_by', 'created_by'], true)) {
+                    continue;
+                }
+                $changes[$labels[$col] ?? $col] = ($l->action_type === 'created' ? '' : (string) ($old[$col] ?? '') . ' → ') . (string) ($new[$col] ?? '');
+            }
+
+            return [
+                'when' => fmt_datetime($l->created_at),
+                'by' => optional($l->user)->name ?? ((string) ($new['updated_by'] ?? $new['created_by'] ?? '-')),
+                'action' => $actions[$l->action_type] ?? $l->action_type,
+                'labour' => $n ? trim($n->labour_prefix . '. ' . $n->labour_fullname) . ' (' . $n->labour_passport_number . ')' : '#' . $l->model_id . ' (ถูกลบแล้ว)',
+                'changes' => $changes,
+            ];
+        })->all();
+
+        return ['found' => count($rows), 'rows' => $rows];
+    }
+
+    /** How many documents of one type expire in each of the next N months (plus already expired), optionally grouped. */
+    public function expiryTimeline(string $type, int $months = 6, ?string $groupBy = null, array $filters = []): array
+    {
+        $col = ExpiryService::TYPES[$type] ?? null;
+        if (! $col) {
+            return ['error' => 'type ต้องเป็น ' . implode('/', array_keys(ExpiryService::TYPES))];
+        }
+        $months = max(1, min($months, 24));
+        $today = Carbon::today();
+        $end = $today->copy()->addMonths($months)->endOfMonth()->toDateString();
+        $filters = $filters + ['status_job' => 'job'];
+        unset($filters['expiring'], $filters['expired'], $filters['order_by'], $filters['limit']);
+
+        $base = $this->build($filters)->reorder()->whereNotNull("labour.$col")->where("labour.$col", '<=', $end);
+        $expired = (clone $base)->where("labour.$col", '<', $today->toDateString())->count();
+        $upcoming = (clone $base)->where("labour.$col", '>=', $today->toDateString());
+
+        $groupCol = $groupBy && isset(self::GROUP_FIELDS[$groupBy]) ? self::GROUP_FIELDS[$groupBy] : null;
+        $select = [DB::raw("SUBSTR(labour.$col, 1, 7) AS ym"), DB::raw('COUNT(*) AS total')];
+        if ($groupCol) {
+            $select[] = DB::raw("COALESCE($groupCol, '-') AS grp");
+        }
+        $rows = $upcoming->select($select)->groupBy(DB::raw("SUBSTR(labour.$col, 1, 7)" . ($groupCol ? ", COALESCE($groupCol, '-')" : '')))->orderBy('ym')->get();
+
+        $byMonth = [];
+        for ($i = 0; $i <= $months; $i++) {
+            $byMonth[$today->copy()->addMonths($i)->format('Y-m')] = ['month' => $today->copy()->addMonths($i)->format('Y-m'), 'total' => 0, 'groups' => []];
+        }
+        foreach ($rows as $r) {
+            if (! isset($byMonth[$r->ym])) {
+                continue;
+            }
+            $byMonth[$r->ym]['total'] += (int) $r->total;
+            if ($groupCol) {
+                $byMonth[$r->ym]['groups'][] = ['group' => $this->groupLabel($groupBy, $r->grp), 'total' => (int) $r->total];
+            }
+        }
+        foreach ($byMonth as &$m) {
+            usort($m['groups'], fn ($a, $b) => $b['total'] <=> $a['total']);
+            $m['groups'] = array_slice($m['groups'], 0, 15);
+            if (! $groupCol) {
+                unset($m['groups']);
+            }
+        }
+
+        return [
+            'type' => $type, 'label' => ExpiryService::LABELS[$type], 'from' => $today->toDateString(), 'to' => $end,
+            'expired_already' => $expired, 'months' => array_values($byMonth), 'total_upcoming' => array_sum(array_column($byMonth, 'total')),
+            'note' => 'นับเฉพาะแรงงานที่ทำงานอยู่ (status_job=job) เว้นแต่ระบุ filters เป็นอย่างอื่น',
+        ];
+    }
+
+    /** Data problems that break the workflow: missing fields, impossible dates, expired-but-working, no files. */
+    public function dataQualityCheck(array $filters = []): array
+    {
+        unset($filters['expiring'], $filters['expired'], $filters['order_by'], $filters['limit']);
+        $base = $this->build($filters)->reorder();
+        $today = Carbon::today()->toDateString();
+        $checks = [
+            'no_birthday' => ['ไม่มีวันเกิด (เข้า Worker App ไม่ได้)', fn ($q) => $q->whereNull('labour.labour_birthday')],
+            'no_passport_number' => ['ไม่มีเลขพาสปอร์ต', fn ($q) => $q->where(fn ($w) => $w->whereNull('labour.labour_passport_number')->orWhere('labour.labour_passport_number', ''))],
+            'no_passport_end' => ['ทำงานอยู่แต่ไม่มีวันหมดอายุพาสปอร์ต', fn ($q) => $q->where('labour.labour_status_job', 'job')->whereNull('labour.labour_passport_date_end')],
+            'no_visa_end' => ['ทำงานอยู่แต่ไม่มีวันหมดอายุวีซ่า', fn ($q) => $q->where('labour.labour_status_job', 'job')->whereNull('labour.labour_visa_date_end')],
+            'no_work_end' => ['ทำงานอยู่แต่ไม่มีวันหมดอายุใบอนุญาตทำงาน', fn ($q) => $q->where('labour.labour_status_job', 'job')->whereNull('labour.labour_workpremit_date_end')],
+            'no_company' => ['ทำงานอยู่แต่ไม่มีนายจ้าง', fn ($q) => $q->where('labour.labour_status_job', 'job')->whereNull('labour.company_id')],
+            'visa_after_passport' => ['วีซ่าหมดอายุหลังพาสปอร์ตหมด (ผิดปกติ)', fn ($q) => $q->whereNotNull('labour.labour_visa_date_end')->whereNotNull('labour.labour_passport_date_end')->whereColumn('labour.labour_visa_date_end', '>', 'labour.labour_passport_date_end')],
+            'work_after_passport' => ['ใบอนุญาตทำงานหมดอายุหลังพาสปอร์ตหมด (ผิดปกติ)', fn ($q) => $q->whereNotNull('labour.labour_workpremit_date_end')->whereNotNull('labour.labour_passport_date_end')->whereColumn('labour.labour_workpremit_date_end', '>', 'labour.labour_passport_date_end')],
+            'expired_but_working' => ['ทำงานอยู่แต่มีเอกสารหมดอายุแล้ว', fn ($q) => $q->where('labour.labour_status_job', 'job')->where(fn ($w) => $w->where('labour.labour_passport_date_end', '<', $today)->orWhere('labour.labour_visa_date_end', '<', $today)->orWhere('labour.labour_workpremit_date_end', '<', $today))],
+            'resign_without_date' => ['ลาออกแต่ไม่มีวันที่ลาออก', fn ($q) => $q->where('labour.labour_status_job', 'resign')->whereNull('labour.labour_resing_date')],
+            'disabled_but_working' => ['ปิดใช้งานในระบบแต่สถานะยังทำงานอยู่', fn ($q) => $q->where('labour.labour_status', 'disable')->where('labour.labour_status_job', 'job')],
+        ];
+        if (LabourDocument::tableReady()) {
+            $checks['no_documents'] = ['ไม่มีไฟล์เอกสารเลย', fn ($q) => $q->where('labour.labour_status_job', 'job')
+                ->whereNull('labour.labour_file_passport')->whereNull('labour.labour_file_visa')->whereNull('labour.labour_file_work')
+                ->whereNotExists(fn ($s) => $s->select(DB::raw(1))->from('labour_documents')->whereColumn('labour_documents.labour_id', 'labour.labour_id'))];
+        }
+
+        $out = [];
+        $problems = 0;
+        foreach ($checks as $key => [$label, $apply]) {
+            $q = $apply(clone $base);
+            $n = (clone $q)->count();
+            if ($n === 0) {
+                continue;
+            }
+            $problems += $n;
+            $out[] = [
+                'check' => $key, 'label' => $label, 'count' => $n,
+                'examples' => $q->limit(8)->get()->map(fn ($r) => trim($r->labour_prefix . '. ' . $r->labour_fullname) . ' (' . $r->labour_passport_number . ')')->all(),
+            ];
+        }
+        usort($out, fn ($a, $b) => $b['count'] <=> $a['count']);
+
+        return ['checked' => (clone $base)->count(), 'problems' => $problems, 'issues' => $out, 'filters' => $filters];
     }
 
     /** Words that only say what kind of legal entity a name is; ignored when matching company/agency names. */

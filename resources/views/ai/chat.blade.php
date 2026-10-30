@@ -51,7 +51,7 @@
         </div>
     @endif
 
-    <div class="card chat-wrap" id="chatWrap" data-endpoint="{{ route('ai.message') }}" data-user="{{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}" data-avatar="{{ auth()->user()->avatarUrl() ?? '' }}" data-configured="{{ $configured ? 1 : 0 }}">
+    <div class="card chat-wrap" id="chatWrap" data-endpoint="{{ route('ai.message') }}" data-feedback="{{ url('/ai-chat/feedback') }}" data-user="{{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}" data-avatar="{{ auth()->user()->avatarUrl() ?? '' }}" data-configured="{{ $configured ? 1 : 0 }}">
         <div class="chat-log" id="chatLog">
             <div class="chat-empty" id="chatEmpty">
                 <div class="big"><i class="mdi mdi-robot"></i></div>
@@ -137,6 +137,32 @@
         log.scrollTop = log.scrollHeight;
         return el;
     }
+    // 👍/👎 + follow-up chips under an answer
+    function addExtras(el, data) {
+        var body = el.querySelector('.msg-body');
+        if (data.log_id) {
+            var fb = document.createElement('div'); fb.className = 'msg-feedback';
+            fb.innerHTML = '<button type="button" data-rate="1" title="คำตอบนี้ดี"><i class="mdi mdi-thumb-up-outline"></i></button><button type="button" data-rate="-1" title="คำตอบนี้ไม่ดี"><i class="mdi mdi-thumb-down-outline"></i></button>';
+            fb.querySelectorAll('button').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var rating = parseInt(b.dataset.rate, 10), note = '';
+                    if (rating < 0) { note = window.prompt('คำตอบนี้ผิดตรงไหน หรือควรเป็นอย่างไร (ไม่บังคับ)', '') || ''; }
+                    fetch(wrap.dataset.feedback + '/' + data.log_id, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify({ rating: rating, feedback: note }) })
+                        .then(function () { fb.innerHTML = '<span class="text-3">' + (rating > 0 ? 'ขอบคุณครับ 👍' : 'บันทึกแล้ว จะนำไปปรับปรุง 👎') + '</span>'; });
+                });
+            });
+            body.appendChild(fb);
+        }
+        if (data.suggestions && data.suggestions.length) {
+            var chips = document.createElement('div'); chips.className = 'chips msg-chips';
+            data.suggestions.forEach(function (sug) {
+                var b = document.createElement('button'); b.type = 'button'; b.textContent = sug;
+                b.addEventListener('click', function () { chips.remove(); ask(sug); });
+                chips.appendChild(b);
+            });
+            body.appendChild(chips);
+        }
+    }
     function addTyping() {
         var el = document.createElement('div');
         el.className = 'msg msg-ai'; el.id = 'chatTyping';
@@ -195,7 +221,8 @@
                 addMessage('assistant', '**เกิดข้อผิดพลาด:** ' + errText);
             } else {
                 var meta = time() + (data.tools_used && data.tools_used.length ? ' · ใช้เครื่องมือ: ' + data.tools_used.join(', ') : '');
-                addMessage('assistant', data.answer, data.reports, meta);
+                var el = addMessage('assistant', data.answer, data.reports, meta);
+                addExtras(el, data);
                 history.push({ role: 'assistant', content: data.answer, reports: data.reports, time: meta });
                 save();
             }

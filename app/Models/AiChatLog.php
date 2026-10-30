@@ -13,7 +13,7 @@ class AiChatLog extends Model
 
     protected $fillable = [
         'user_id', 'conversation_id', 'question', 'answer', 'tools_used', 'reports',
-        'prompt_tokens', 'completion_tokens', 'duration_ms', 'status', 'error', 'ip', 'created_at',
+        'prompt_tokens', 'completion_tokens', 'duration_ms', 'status', 'error', 'ip', 'created_at', 'rating', 'feedback',
     ];
 
     protected $casts = [
@@ -22,6 +22,7 @@ class AiChatLog extends Model
         'prompt_tokens' => 'integer',
         'completion_tokens' => 'integer',
         'duration_ms' => 'integer',
+        'rating' => 'integer',
         'created_at' => 'datetime',
     ];
 
