@@ -233,6 +233,32 @@ class LabourAssistant
      * `document` is given (or there is no profile photo). The face must stay the same person — only light, colour,
      * sharpness, background, framing and tidy clothing are changed. Result: a JPEG kept 1 day under ai-images/.
      */
+    /**
+     * Put the picture on a 2:3 light-grey canvas with room above (hair) and below (shoulders, chest), so the image model
+     * can complete a head or shoulders that the source crop cut off. PNG bytes.
+     */
+    private static function padForPortrait(string $bytes): string
+    {
+        $src = @imagecreatefromstring($bytes);
+        if (! $src) {
+            return $bytes;
+        }
+        [$w, $h] = [imagesx($src), imagesy($src)];
+        $cw = (int) round(max($w * 1.5, $h * 1.0));
+        $ch = (int) round($cw * 1.5);
+        $scale = min(1, ($cw * 0.72) / $w, ($ch * 0.55) / $h);
+        [$dw, $dh] = [(int) round($w * $scale), (int) round($h * $scale)];
+        $canvas = imagecreatetruecolor($cw, $ch);
+        imagefill($canvas, 0, 0, imagecolorallocate($canvas, 235, 235, 235));
+        imagecopyresampled($canvas, $src, (int) (($cw - $dw) / 2), (int) round($ch * 0.16), 0, 0, $dw, $dh, $w, $h);
+        imagedestroy($src);
+        ob_start();
+        imagepng($canvas);
+        imagedestroy($canvas);
+
+        return (string) ob_get_clean();
+    }
+
     private function retouchPhoto(string $query, string $instructions, string $document, bool $addLogo = false): array
     {
         [$labour, $doc, $candidates] = $this->query->findDocument($query, $document);
@@ -269,22 +295,30 @@ class LabourAssistant
             [$bytes, $source] = [$doc->storage()->get($doc->path), $doc->name . ' – ' . $doc->fileName()];
         }
 
-        $prompt = "Retouch this photo of a person for a job application photo. Keep the same person: do not change the face, "
-            . "facial features, face shape, age, skin tone, hair line, expression or body shape, and do not add or remove any feature. "
-            . "Allowed: fix lighting and white balance, reduce noise and blur, remove dust and small blemishes, clean or replace the background "
-            . "(plain white unless told otherwise), straighten and center as a head-and-shoulders portrait, tidy the clothing. Photorealistic, no text, no watermark."
+        // Profile photos are square centre crops, so the top of the head / the shoulders are often cut off: give the model
+        // empty canvas above and below and ask it to complete them — the result must be a full application photo.
+        [$bytes, $mime] = [self::padForPortrait((string) $bytes), 'image/png'];
+
+        $prompt = "Make this into a complete, professional job application photo (ID-photo style, portrait 2:3) of the same person. "
+            . "Keep the same person exactly: do not change the face, facial features, face shape, age, skin tone, hairline, hairstyle, expression or body shape, "
+            . "and do not add or remove any feature.\n"
+            . "Framing (required): the ENTIRE head including the top of the hair must be inside the photo with a clear margin above it (about 8–12% of the height); "
+            . "head centered and straight, eyes at about 40% from the top; shoulders and upper chest visible (head-and-shoulders). "
+            . "The plain light-grey margins around the source picture are empty canvas: if the top of the hair, the ears, the shoulders or the clothes are cut off "
+            . "in the source, complete them naturally and consistently with the visible parts (same hair colour, length and style; same clothing).\n"
+            . "Also: even, soft front lighting, correct white balance, sharp focus, reduce noise, remove dust and small blemishes, "
+            . "plain white background (unless told otherwise), neat clothing. Photorealistic, no text, no watermark, no frame."
             . ($instructions !== '' ? "\nUser request (follow it only within the rules above): " . mb_substr($instructions, 0, 500) : '');
 
         $extra = [];
         $logo = public_path('assets/images/logo168.png');
         if ($addLogo && is_file($logo)) { // the company's real logo file as a 2nd reference image — not drawn from memory
             $extra[] = ['bytes' => (string) file_get_contents($logo), 'mime' => 'image/png'];
-            $prompt .= "
-Also place the logo from the second image as a small, neat logo on the shirt at the person's left chest "
+            $prompt .= "\nAlso place the logo from the second image as a small, neat logo on the shirt at the person's left chest "
                 . "(the right side of the photo as we look at it), about the size of a shirt pocket emblem, keeping its colours and text exactly; nowhere else.";
         }
         @set_time_limit(300); // GPT Image takes up to a few minutes
-        $out = $this->client->editImage($bytes, $mime, $prompt, '1024x1024', $extra);
+        $out = $this->client->editImage($bytes, $mime, $prompt, '1024x1536', $extra);
         $file = 'ai-images/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.jpg';
         Storage::disk('local')->put($file, $out['bytes']);
         $this->cleanupOld('ai-images');

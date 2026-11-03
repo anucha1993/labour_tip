@@ -51,7 +51,7 @@ class LabourPhotoService
      */
     public function replaceKeepingOld(LabourModel $labour, string $bytes, string $updatedBy): array
     {
-        $jpeg = SquareImage::fromBytes($bytes, self::SIZE, 90);
+        $jpeg = SquareImage::fromBytes($bytes, self::SIZE, 90, true); // whole portrait (head to chest), not a centre crop
         $disk = LabourDocument::targetDisk();
         $path = 'photos/' . $labour->labour_id . '_ai_' . Str::lower(Str::random(8)) . '.jpg';
         Storage::disk($disk)->put($path, $jpeg, ['visibility' => 'private']);

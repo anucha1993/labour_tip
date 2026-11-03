@@ -23,29 +23,34 @@ class SquareImage
         return self::square(self::applyExifOrientation($src, $file->getRealPath()), $size, $quality);
     }
 
-    /** Same as fromUpload() for image bytes already in memory (e.g. a photo retouched by the AI). */
-    public static function fromBytes(string $raw, int $size, int $quality = 85): string
+    /**
+     * Same as fromUpload() for image bytes already in memory (e.g. a photo retouched by the AI).
+     * $contain = fit the whole picture inside the square on white instead of cropping (keeps the full head of a portrait).
+     */
+    public static function fromBytes(string $raw, int $size, int $quality = 85, bool $contain = false): string
     {
         $src = $raw !== '' ? @imagecreatefromstring($raw) : false;
         if (! $src) {
             throw new RuntimeException('ไม่สามารถอ่านไฟล์รูปภาพได้');
         }
 
-        return self::square($src, $size, $quality);
+        return self::square($src, $size, $quality, $contain);
     }
 
-    private static function square($src, int $size, int $quality): string
+    private static function square($src, int $size, int $quality, bool $contain = false): string
     {
-
         $w = imagesx($src);
         $h = imagesy($src);
-        $side = min($w, $h);
-        $x = (int) (($w - $side) / 2);
-        $y = (int) (($h - $side) / 2);
-
         $dst = imagecreatetruecolor($size, $size);
         imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255)); // transparent PNGs get a white background
-        imagecopyresampled($dst, $src, 0, 0, $x, $y, $size, $size, $side, $side);
+        if ($contain) {
+            $scale = $size / max($w, $h);
+            [$dw, $dh] = [(int) round($w * $scale), (int) round($h * $scale)];
+            imagecopyresampled($dst, $src, (int) (($size - $dw) / 2), (int) (($size - $dh) / 2), 0, 0, $dw, $dh, $w, $h);
+        } else {
+            $side = min($w, $h);
+            imagecopyresampled($dst, $src, 0, 0, (int) (($w - $side) / 2), (int) (($h - $side) / 2), $size, $size, $side, $side);
+        }
         imagedestroy($src);
 
         ob_start();
