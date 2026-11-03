@@ -77,9 +77,10 @@ class OpenAiClient
      * Edit a picture with GPT Image (POST /images/edits, JSON body — works directly and through DataCorp).
      *
      * @param  string  $bytes  source image (JPEG/PNG/WEBP)
+     * @param  array  $extra  more reference images [['bytes' => …, 'mime' => …]] (e.g. a logo to put on the clothes)
      * @return array{bytes: string, mime: string, usage: array}
      */
-    public function editImage(string $bytes, string $mime, string $prompt, string $size = '1024x1024'): array
+    public function editImage(string $bytes, string $mime, string $prompt, string $size = '1024x1024', array $extra = []): array
     {
         if (! $this->isConfigured()) {
             throw new RuntimeException('ยังไม่ได้ตั้งค่า OPENAI_API_KEY ใน .env');
@@ -91,7 +92,10 @@ class OpenAiClient
                 ->retry(1, 1000, fn ($e) => $e instanceof \Illuminate\Http\Client\ConnectionException)
                 ->post($this->baseUrl . '/images/edits', [
                     'model' => config('services.openai.image_model', 'gpt-image-2'),
-                    'images' => [['image_url' => 'data:' . $mime . ';base64,' . base64_encode($bytes)]],
+                    'images' => array_merge(
+                        [['image_url' => 'data:' . $mime . ';base64,' . base64_encode($bytes)]],
+                        array_map(fn ($x) => ['image_url' => 'data:' . $x['mime'] . ';base64,' . base64_encode($x['bytes'])], $extra)
+                    ),
                     'prompt' => $prompt,
                     'size' => $size,
                     'quality' => 'high',

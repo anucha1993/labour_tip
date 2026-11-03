@@ -323,6 +323,7 @@ class LabourQueryService
         }
         $out['id'] = $r->labour_id;
         $out['url'] = route('labour.show', $r->labour_id);
+        $out['รูปโปรไฟล์'] = ! empty($r->labour_photo) ? 'มี (retouch_labour_photo ใช้รูปนี้ได้เลย)' : 'ไม่มี';
         $out['เอกสารไฟล์'] = $this->documentsOf((int) $r->labour_id);
 
         return $out;

@@ -183,7 +183,7 @@ class LabourAssistant
             'read_labour_document' => $this->readDocument((string) ($args['query'] ?? ''), (string) ($args['document'] ?? '')),
             'extract_document_pages' => $this->pdfFile((string) ($args['query'] ?? ''), [['document' => (string) ($args['document'] ?? ''), 'pages' => (string) ($args['pages'] ?? '')]], (string) ($args['title'] ?? '')),
             'merge_labour_documents' => $this->pdfFile((string) ($args['query'] ?? ''), is_array($args['parts'] ?? null) ? $args['parts'] : [], (string) ($args['title'] ?? '')),
-            'retouch_labour_photo' =>$this->retouchPhoto((string) ($args['query'] ?? ''), (string) ($args['instructions'] ?? ''), (string) ($args['document'] ?? '')),
+            'retouch_labour_photo' => $this->retouchPhoto((string) ($args['query'] ?? ''), (string) ($args['instructions'] ?? ''), (string) ($args['document'] ?? ''), ! empty($args['add_logo'])),
             default => ['error' => 'unknown tool'],
         };
     }
@@ -233,7 +233,7 @@ class LabourAssistant
      * `document` is given (or there is no profile photo). The face must stay the same person — only light, colour,
      * sharpness, background, framing and tidy clothing are changed. Result: a JPEG kept 1 day under ai-images/.
      */
-    private function retouchPhoto(string $query, string $instructions, string $document): array
+    private function retouchPhoto(string $query, string $instructions, string $document, bool $addLogo = false): array
     {
         [$labour, $doc, $candidates] = $this->query->findDocument($query, $document);
         if (! $labour) {
@@ -275,8 +275,16 @@ class LabourAssistant
             . "(plain white unless told otherwise), straighten and center as a head-and-shoulders portrait, tidy the clothing. Photorealistic, no text, no watermark."
             . ($instructions !== '' ? "\nUser request (follow it only within the rules above): " . mb_substr($instructions, 0, 500) : '');
 
+        $extra = [];
+        $logo = public_path('assets/images/logo168.png');
+        if ($addLogo && is_file($logo)) { // the company's real logo file as a 2nd reference image — not drawn from memory
+            $extra[] = ['bytes' => (string) file_get_contents($logo), 'mime' => 'image/png'];
+            $prompt .= "
+Also place the logo from the second image as a small, neat logo on the shirt at the person's left chest "
+                . "(the right side of the photo as we look at it), about the size of a shirt pocket emblem, keeping its colours and text exactly; nowhere else.";
+        }
         @set_time_limit(300); // GPT Image takes up to a few minutes
-        $out = $this->client->editImage($bytes, $mime, $prompt);
+        $out = $this->client->editImage($bytes, $mime, $prompt, '1024x1024', $extra);
         $file = 'ai-images/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.jpg';
         Storage::disk('local')->put($file, $out['bytes']);
         $this->cleanupOld('ai-images');
@@ -584,6 +592,7 @@ class LabourAssistant
                     'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
                     'instructions' => ['type' => 'string', 'description' => 'สิ่งที่ผู้ใช้ต้องการเพิ่มเติม เช่น พื้นหลังสีฟ้า สว่างขึ้น ใส่เสื้อเชิ้ตสีขาว (ว่าง = รีทัชมาตรฐานพื้นหลังขาว)'],
                     'document' => ['type' => 'string', 'description' => 'document_key ของไฟล์รูปที่จะใช้แทนรูปโปรไฟล์ (เว้นว่าง = รูปโปรไฟล์)'],
+                    'add_logo' => ['type' => 'boolean', 'description' => 'ใส่โลโก้ The Importer 168 (ไฟล์โลโก้จริงของบริษัท) ที่หน้าอกเสื้อด้านซ้ายของผู้สวม เมื่อผู้ใช้ขอโลโก้ importer168/168'],
                 ],
                 'required' => ['query'],
             ]),
@@ -641,6 +650,7 @@ class LabourAssistant
 - เอกสารที่มีวันหมดอายุ 4 ประเภท: หนังสือเดินทาง (passport), วีซ่า (visa), ใบอนุญาตทำงาน/Work Permit (work), รายงานตัว 90 วัน/ตม. (ninety) แต่ละประเภทมีจำนวนวันแจ้งเตือนล่วงหน้าตั้งค่าไว้ในระบบ (ดูได้จาก get_expiry_summary)
 - "ใกล้หมดอายุ" = จะหมดภายใน N วันนับจากวันนี้ (ยังไม่หมด) "หมดอายุแล้ว" = ผ่านวันหมดอายุมาแล้ว ทั้งสองนับเฉพาะแรงงานที่ทำงานอยู่
 - รหัส Worker App ของแรงงาน = วันเกิดรูปแบบ ddmmyyyy แรงงานที่ไม่มีวันเกิดในระบบจะเข้าแอปไม่ได้
+- "รูป / รูปภาพ / รูปถ่าย" ของแรงงาน = รูปโปรไฟล์ของแรงงาน (labour_photo) เสมอ ไม่ใช่ไฟล์เอกสาร เว้นแต่ผู้ใช้ระบุชื่อไฟล์เอกสารเอง
 - ไฟล์เอกสาร = PDF/รูปที่อัปโหลดไว้ต่อคน รายการอยู่ในช่อง "เอกสารไฟล์" ของ get_labour_detail (มี document_key และ open_url)
 
 ## เลือกเครื่องมือจากคำถาม (ตัวอย่าง)
@@ -656,7 +666,7 @@ class LabourAssistant
 - "ทำ PowerPoint / Present / สไลด์ / ไฟล์นำเสนอ" → create_presentation (scope=company ถ้าระบุบริษัท, scope=system ถ้าขอภาพรวมทั้งระบบ) ใส่ include_names=true เฉพาะเมื่อผู้ใช้ขอรายชื่อ ถ้าต้องการใส่ insights ให้เรียก count_labours / get_expiry_timeline ก่อนเพื่อให้ข้อสังเกตอิงตัวเลขจริง
 - "ดึงเฉพาะหน้าวีซ่าจากไฟล์ passport.pdf / แยกหน้า 2 ออกมา" → (ถ้าไม่ได้บอกเลขหน้า read_labour_document ก่อนเพื่อหาหน้า) → extract_document_pages ; "รวมพาสปอร์ตกับวีซ่าเป็นไฟล์เดียว" → merge_labour_documents
 - "จัดระเบียบ / เรียงหน้าใหม่ เช่น เอาหน้า Visa ขึ้นก่อน Passport หน้า 2" → read_labour_document เพื่อรู้ว่าแต่ละหน้าคืออะไร → extract_document_pages ด้วยเลขหน้าครบทุกหน้าตามลำดับใหม่ (หน้าที่ผู้ใช้ไม่ได้พูดถึงให้ต่อท้ายตามลำดับเดิม ไม่ทิ้งหน้าใด) แล้วตอบเป็นตาราง ลำดับใหม่ | หน้าเดิม | คือหน้าอะไร
-- "รีทัชรูป / แต่งรูป / ทำรูปสมัครงาน / เปลี่ยนพื้นหลังรูป" ของแรงงาน → retouch_labour_photo (ทำได้จริง ห้ามตอบว่าระบบไม่มีฟังก์ชันนี้)
+- "รีทัชรูป / แต่งรูป / ทำรูปสมัครงาน / เปลี่ยนพื้นหลังรูป" ของแรงงาน → retouch_labour_photo (ทำได้จริง ห้ามตอบว่าระบบไม่มีฟังก์ชันนี้) เรียกได้ทันทีโดยไม่ต้อง get_labour_detail ก่อน เครื่องมือหารูปโปรไฟล์เอง ถ้าไม่มีรูปจะบอกเอง ห้ามสรุปเองว่าไม่มีรูป ; ขอใส่โลโก้ importer168 → add_logo=true
 - "แก้ / เปลี่ยน / อัปเดต / ปิดสถานะ / ย้ายบริษัท" → propose_update (ตามข้อ 10)
 - ชื่อบริษัทที่มี บจก./บริษัท/จำกัด หรือพิมพ์ย่อ และชื่อคนที่มี Mr./Ms. ค้นได้ทันที ไม่ต้องถามซ้ำ
 - คำถามซ้อน เช่น "ปิดสถานะ…แล้วออก Excel" ให้ทำทีละขั้น: เสนอการแก้ → รอยืนยัน → บันทึก → ค่อยสร้าง Excel ด้วยเงื่อนไขเดิม
