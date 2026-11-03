@@ -48,6 +48,9 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        // retouch photos in the AI chat (POST /images/edits)
+        'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
+        'image_timeout' => (int) env('OPENAI_IMAGE_TIMEOUT', 240),
         // true = AI goes through DataCorp (plan/credits bar + payment links); default: on when base_url is datacorpapi.com
         'datacorp' => env('OPENAI_DATACORP'),
     ],

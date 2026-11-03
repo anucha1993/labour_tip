@@ -114,6 +114,9 @@ class LabourAssistant
         if (in_array('propose_update', $used, true)) {
             return ['ยืนยัน', 'ยกเลิก'];
         }
+        if (in_array('retouch_labour_photo', $used, true)) {
+            return ['เปลี่ยนพื้นหลังเป็นสีฟ้า', 'ปรับให้สว่างขึ้นอีกนิด'];
+        }
         if (in_array('apply_update', $used, true)) {
             $out = ['ขอ Excel รายการที่เพิ่งแก้', 'ดูประวัติการแก้ไขล่าสุด'];
         } elseif (in_array('read_labour_document', $used, true) || in_array('read_attachment', $used, true)) {
@@ -164,6 +167,7 @@ class LabourAssistant
             'get_expiry_timeline' => $this->query->expiryTimeline((string) ($args['type'] ?? 'visa'), (int) ($args['months'] ?? 6), $args['group_by'] ?? null, is_array($args['filters'] ?? null) ? $args['filters'] : []),
             'check_data_quality' => $this->query->dataQualityCheck(is_array($args['filters'] ?? null) ? $args['filters'] : []),
             'read_labour_document' => $this->readDocument((string) ($args['query'] ?? ''), (string) ($args['document'] ?? '')),
+            'retouch_labour_photo' => $this->retouchPhoto((string) ($args['query'] ?? ''), (string) ($args['instructions'] ?? ''), (string) ($args['document'] ?? '')),
             default => ['error' => 'unknown tool'],
         };
     }
@@ -208,6 +212,69 @@ class LabourAssistant
             + $this->reader->read($doc);
     }
 
+    /**
+     * Retouch a labour's picture for job applications with GPT Image: the profile photo, or an image document when
+     * `document` is given (or there is no profile photo). The face must stay the same person — only light, colour,
+     * sharpness, background, framing and tidy clothing are changed. Result: a JPEG kept 1 day under ai-images/.
+     */
+    private function retouchPhoto(string $query, string $instructions, string $document): array
+    {
+        [$labour, $doc, $candidates] = $this->query->findDocument($query, $document);
+        if (! $labour) {
+            return ['error' => 'ไม่พบแรงงานตามคำค้น "' . $query . '"'];
+        }
+        $name = trim($labour->labour_prefix . '. ' . $labour->labour_fullname);
+
+        if ($document === '' && $labour->hasPhoto()) {
+            $disk = Storage::disk($labour->labour_photo_disk ?: 'public');
+            if (! $disk->exists($labour->labour_photo)) {
+                return ['error' => 'ไม่พบไฟล์รูปแรงงานในที่เก็บไฟล์', 'labour' => $name];
+            }
+            [$bytes, $mime, $source] = [$disk->get($labour->labour_photo), 'image/jpeg', 'รูปแรงงาน (โปรไฟล์)'];
+        } else {
+            $images = array_values(array_filter($candidates, fn ($c) => preg_match('/\.(jpe?g|png|webp)$/i', (string) $c['ไฟล์'])));
+            if ($doc && ! in_array($doc->extension(), ['jpg', 'jpeg', 'png', 'webp'], true)) {
+                $doc = null;
+            }
+            if (! $doc && count($images) === 1) {
+                [, $doc] = $this->query->findDocument($query, $images[0]['document_key']);
+            }
+            if (! $doc || ! $doc->isImage()) {
+                return [
+                    'error' => $images ? 'ระบุรูปที่จะรีทัชไม่ชัดเจน กรุณาเลือก document_key จากรายการ' : 'แรงงานคนนี้ยังไม่มีรูป (ไม่มีรูปโปรไฟล์และไม่มีไฟล์เอกสารที่เป็นรูป JPG/PNG/WEBP)',
+                    'labour' => $name,
+                    'images' => $images,
+                ];
+            }
+            if (! $doc->exists()) {
+                return ['error' => 'ไม่พบไฟล์ ' . $doc->fileName() . ' ในที่เก็บไฟล์', 'labour' => $name];
+            }
+            $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$doc->extension()];
+            [$bytes, $source] = [$doc->storage()->get($doc->path), $doc->name . ' – ' . $doc->fileName()];
+        }
+
+        $prompt = "Retouch this photo of a person for a job application photo. Keep the same person: do not change the face, "
+            . "facial features, face shape, age, skin tone, hair line, expression or body shape, and do not add or remove any feature. "
+            . "Allowed: fix lighting and white balance, reduce noise and blur, remove dust and small blemishes, clean or replace the background "
+            . "(plain white unless told otherwise), straighten and center as a head-and-shoulders portrait, tidy the clothing. Photorealistic, no text, no watermark."
+            . ($instructions !== '' ? "\nUser request (follow it only within the rules above): " . mb_substr($instructions, 0, 500) : '');
+
+        @set_time_limit(300); // GPT Image takes up to a few minutes
+        $out = $this->client->editImage($bytes, $mime, $prompt);
+        $file = 'ai-images/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.jpg';
+        Storage::disk('local')->put($file, $out['bytes']);
+        $this->cleanupOld('ai-images');
+
+        return [
+            'labour' => $name,
+            'passport_number' => $labour->labour_passport_number,
+            'source' => $source,
+            'image_url' => route('ai.image', ['file' => basename($file)]),
+            'download_url' => route('ai.image', ['file' => basename($file), 'download' => 1]),
+            'note' => 'ไฟล์เก็บไว้ 1 วัน',
+        ];
+    }
+
     private function createReport(array $args, array &$reports): array
     {
         $filters = $args['filters'] ?? [];
@@ -222,7 +289,7 @@ class LabourAssistant
         $export = new AiLabourExport($rows, $columns, $title);
         $file = 'ai-reports/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.xlsx';
         Excel::store($export, $file, 'local');
-        $this->cleanupOldReports();
+        $this->cleanupOld('ai-reports');
 
         $report = [
             'title' => $title,
@@ -237,11 +304,12 @@ class LabourAssistant
         return ['created' => true] + $report;
     }
 
-    private function cleanupOldReports(): void
+    /** Delete generated files (Excel reports, retouched photos) older than a day. */
+    private function cleanupOld(string $dir): void
     {
         try {
             $disk = Storage::disk('local');
-            foreach ($disk->files('ai-reports') as $path) {
+            foreach ($disk->files($dir) as $path) {
                 if ($disk->lastModified($path) < now()->subDay()->getTimestamp()) {
                     $disk->delete($path);
                 }
@@ -328,6 +396,15 @@ class LabourAssistant
                 ],
                 'required' => ['query', 'document'],
             ]),
+            $fn('retouch_labour_photo', 'รีทัช/แต่งรูปของแรงงานสำหรับใช้สมัครงาน ด้วย AI สร้างภาพ: ปรับแสง สี ความคมชัด ลบจุด เปลี่ยนพื้นหลัง (ค่าเริ่มต้นสีขาว) จัดกรอบครึ่งตัว จัดเสื้อผ้าให้เรียบร้อย โดยใบหน้ายังเป็นคนเดิม ใช้รูปโปรไฟล์ของแรงงานเป็นต้นฉบับ (หรือไฟล์เอกสารที่เป็นรูป ถ้าระบุ document) คืน image_url และ download_url', [
+                'type' => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
+                    'instructions' => ['type' => 'string', 'description' => 'สิ่งที่ผู้ใช้ต้องการเพิ่มเติม เช่น พื้นหลังสีฟ้า สว่างขึ้น ใส่เสื้อเชิ้ตสีขาว (ว่าง = รีทัชมาตรฐานพื้นหลังขาว)'],
+                    'document' => ['type' => 'string', 'description' => 'document_key ของไฟล์รูปที่จะใช้แทนรูปโปรไฟล์ (เว้นว่าง = รูปโปรไฟล์)'],
+                ],
+                'required' => ['query'],
+            ]),
             $fn('list_companies', 'รายชื่อบริษัท/นายจ้าง พร้อมจำนวนแรงงาน', ['type' => 'object', 'properties' => ['keyword' => ['type' => 'string']]]),
             $fn('list_agencies', 'รายชื่อเอเจนซี่ พร้อมสัญชาติและจำนวนแรงงาน', $empty),
             $fn('get_change_history', 'ประวัติการแก้ไขข้อมูลแรงงาน (ใคร แก้อะไร เมื่อไร ค่าเดิม→ค่าใหม่) ใช้เมื่อถามว่าใครเปลี่ยน/แก้เมื่อไร/ประวัติ', [
@@ -393,6 +470,7 @@ class LabourAssistant
 - "ข้อมูลครบไหม / มีอะไรผิดปกติ / ตรวจสุขภาพข้อมูล / ต้องแก้อะไรบ้าง" → check_data_quality (ใส่ filters เช่น company)
 - "ขอ Excel / ส่งออก / รายงาน / ดาวน์โหลด" → create_excel_report หลังจากรู้เงื่อนไขชัดแล้ว
 - "อ่าน / ดึงเนื้อหา / เทียบไฟล์พาสปอร์ต" → read_labour_document ; ถ้ามีไฟล์แนบมากับคำถาม ใช้เนื้อหานั้นได้เลย
+- "รีทัชรูป / แต่งรูป / ทำรูปสมัครงาน / เปลี่ยนพื้นหลังรูป" ของแรงงาน → retouch_labour_photo (ทำได้จริง ห้ามตอบว่าระบบไม่มีฟังก์ชันนี้)
 - "แก้ / เปลี่ยน / อัปเดต / ปิดสถานะ / ย้ายบริษัท" → propose_update (ตามข้อ 10)
 - ชื่อบริษัทที่มี บจก./บริษัท/จำกัด หรือพิมพ์ย่อ และชื่อคนที่มี Mr./Ms. ค้นได้ทันที ไม่ต้องถามซ้ำ
 - คำถามซ้อน เช่น "ปิดสถานะ…แล้วออก Excel" ให้ทำทีละขั้น: เสนอการแก้ → รอยืนยัน → บันทึก → ค่อยสร้าง Excel ด้วยเงื่อนไขเดิม
@@ -419,6 +497,7 @@ class LabourAssistant
 11. ถ้าข้อความผู้ใช้มีส่วน "ไฟล์แนบจากผู้ใช้" ให้ใช้เนื้อหานั้นตอบได้ทันที ถ้าขอให้ตรวจสอบ/อัปเดตตามไฟล์ ให้หาแรงงานจากชื่อหรือเลขพาสปอร์ตในไฟล์ด้วย get_labour_detail เทียบทีละฟิลด์ แล้ว (ถ้ามีสิทธิ์) propose_update เฉพาะฟิลด์ที่ต่าง พร้อมบอกว่าค่ามาจากไฟล์
 12. ไฟล์แนบที่เป็นตาราง (Excel/CSV): แต่ละแถวคือหนึ่งรายการ ใช้คอลัมน์เลขพาสปอร์ต (หรือชื่อ) เป็น query จับคู่หัวตารางกับฟิลด์ของระบบเอง (เช่น "วีซ่าหมดอายุ" → labour_visa_date_end, "นายจ้าง" → company_id) ถ้ากำกวมให้ถามก่อน แก้หลายแถวให้เรียก propose_update ครั้งเดียวด้วย items แล้วสรุป: แถวที่แก้ได้ ตารางค่าเดิม→ใหม่ และแถวที่แก้ไม่ได้พร้อมเหตุผล ก่อนขอยืนยันครั้งเดียว
 13. คำขอแก้ "ทุกคน/ทั้งหมดของบริษัท X" หรือ "แรงงาน N คนของ X": ใช้ propose_update ด้วย filters (เช่น company + status_job) ไม่ใช่ query ชื่อบริษัท ผลลัพธ์บอกจำนวนที่พบ (matched) ถ้าต่างจากที่ผู้ใช้บอกให้ชี้ให้เห็นก่อนขอยืนยัน เมื่อทุกรายการเปลี่ยนเหมือนกันแสดงตารางการเปลี่ยนครั้งเดียวตามด้วยรายชื่อ (ย่อถ้าเกิน 30 คน)
+14. รีทัชรูป: เรียก retouch_labour_photo (ใส่ instructions ตามที่ผู้ใช้ขอ) แล้วตอบพร้อมรูป ![รูปที่รีทัชแล้ว](image_url) และลิงก์ [ดาวน์โหลดรูป](download_url) บอกว่าใช้รูปต้นฉบับไหน และไฟล์เก็บไว้ 1 วัน ถ้าแรงงานยังไม่มีรูปให้บอกให้อัปโหลดรูปในหน้าข้อมูลแรงงานก่อน รูปสมัครงานต้องเป็นหน้าจริงของคนนั้น ถ้าถูกขอให้เปลี่ยนหน้าตา อายุ สีผิว รูปร่าง หรือทำให้เป็นคนอื่น ให้ปฏิเสธสั้นๆ แล้วเสนอรีทัชแบบปกติแทน
 
 คอลัมน์ที่ใช้ใน Excel ได้: {$columns}
 

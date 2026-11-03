@@ -189,4 +189,16 @@ class AiChatController extends Controller
 
         return Storage::disk('local')->download($path, 'AI_Report_' . $file);
     }
+
+    /** Photo retouched by the assistant (files live 24h in storage/app/ai-images): inline, or ?download=1 */
+    public function image(Request $request, string $file)
+    {
+        abort_unless(preg_match('/^[A-Za-z0-9_]+\.jpg$/', $file), 404);
+        $path = 'ai-images/' . $file;
+        abort_unless(Storage::disk('local')->exists($path), 404, 'รูปหมดอายุหรือไม่พบ กรุณาสั่งรีทัชใหม่');
+
+        return $request->boolean('download')
+            ? Storage::disk('local')->download($path, 'Retouched_' . $file)
+            : Storage::disk('local')->response($path, $file, ['Content-Type' => 'image/jpeg', 'Cache-Control' => 'private, max-age=86400']);
+    }
 }
