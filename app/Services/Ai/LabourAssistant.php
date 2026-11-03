@@ -6,6 +6,7 @@ use App\Exports\AiLabourExport;
 use App\Models\labour\LabourDocument;
 use App\Models\User;
 use App\Services\ExpiryService;
+use App\Support\PdfPages;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -114,6 +115,9 @@ class LabourAssistant
         if (in_array('propose_update', $used, true)) {
             return ['ยืนยัน', 'ยกเลิก'];
         }
+        if (in_array('extract_document_pages', $used, true) || in_array('merge_labour_documents', $used, true)) {
+            return ['รวมกับไฟล์พาสปอร์ตเป็นไฟล์เดียว', 'แยกหน้าอื่นออกมาด้วย'];
+        }
         if (in_array('retouch_labour_photo', $used, true)) {
             return ['เปลี่ยนพื้นหลังเป็นสีฟ้า', 'ปรับให้สว่างขึ้นอีกนิด'];
         }
@@ -167,7 +171,9 @@ class LabourAssistant
             'get_expiry_timeline' => $this->query->expiryTimeline((string) ($args['type'] ?? 'visa'), (int) ($args['months'] ?? 6), $args['group_by'] ?? null, is_array($args['filters'] ?? null) ? $args['filters'] : []),
             'check_data_quality' => $this->query->dataQualityCheck(is_array($args['filters'] ?? null) ? $args['filters'] : []),
             'read_labour_document' => $this->readDocument((string) ($args['query'] ?? ''), (string) ($args['document'] ?? '')),
-            'retouch_labour_photo' => $this->retouchPhoto((string) ($args['query'] ?? ''), (string) ($args['instructions'] ?? ''), (string) ($args['document'] ?? '')),
+            'extract_document_pages' => $this->pdfFile((string) ($args['query'] ?? ''), [['document' => (string) ($args['document'] ?? ''), 'pages' => (string) ($args['pages'] ?? '')]], (string) ($args['title'] ?? '')),
+            'merge_labour_documents' => $this->pdfFile((string) ($args['query'] ?? ''), is_array($args['parts'] ?? null) ? $args['parts'] : [], (string) ($args['title'] ?? '')),
+            'retouch_labour_photo' =>$this->retouchPhoto((string) ($args['query'] ?? ''), (string) ($args['instructions'] ?? ''), (string) ($args['document'] ?? '')),
             default => ['error' => 'unknown tool'],
         };
     }
@@ -271,6 +277,58 @@ class LabourAssistant
             'source' => $source,
             'image_url' => route('ai.image', ['file' => basename($file)]),
             'download_url' => route('ai.image', ['file' => basename($file), 'download' => 1]),
+            'note' => 'ไฟล์เก็บไว้ 1 วัน',
+        ];
+    }
+
+    /**
+     * New PDF from a labour's files (no AI, no credits): one part = extract pages, several parts = merge.
+     * Each part: document (document_key or name) + optional pages ("2", "1-3", "1,3"); images become one page each.
+     */
+    private function pdfFile(string $query, array $parts, string $title): array
+    {
+        if (! $parts || count($parts) > 10) {
+            return ['error' => 'ระบุไฟล์ที่จะใช้ 1–10 ไฟล์'];
+        }
+        $pdf = new PdfPages();
+        $labour = null;
+        $used = [];
+        foreach ($parts as $part) {
+            [$labour, $doc, $candidates] = $this->query->findDocument($query, (string) ($part['document'] ?? ''));
+            if (! $labour) {
+                return ['error' => 'ไม่พบแรงงานตามคำค้น "' . $query . '"'];
+            }
+            if (! $doc) {
+                return ['error' => 'ระบุไฟล์ "' . ($part['document'] ?? '') . '" ไม่ชัดเจน กรุณาเลือก document_key จากรายการ', 'documents' => $candidates];
+            }
+            if (! $doc->exists()) {
+                return ['error' => 'ไม่พบไฟล์ ' . $doc->fileName() . ' ในที่เก็บไฟล์'];
+            }
+            $bytes = (string) $doc->storage()->get($doc->path);
+            $spec = trim((string) ($part['pages'] ?? ''));
+            if ($doc->extension() === 'pdf') {
+                $pages = $spec === '' ? null : PdfPages::parseRange($spec, PdfPages::count($bytes));
+                $pdf->addPdf($bytes, $pages);
+                $used[] = $doc->name . ' – ' . $doc->fileName() . ($pages ? ' หน้า ' . implode(', ', $pages) : ' ทุกหน้า');
+            } elseif (in_array($doc->extension(), ['jpg', 'jpeg', 'png', 'webp'], true)) {
+                $pdf->addImage($bytes);
+                $used[] = $doc->name . ' – ' . $doc->fileName() . ' (รูป)';
+            } else {
+                return ['error' => 'ใช้ได้เฉพาะไฟล์ PDF, JPG, PNG หรือ WEBP (' . $doc->fileName() . ')'];
+            }
+        }
+
+        $file = 'ai-files/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.pdf';
+        Storage::disk('local')->put($file, $pdf->output());
+        $this->cleanupOld('ai-files');
+        $name = preg_replace('/[^A-Za-z0-9ก-๙_\-]+/u', '_', trim(($labour->labour_passport_number ?: 'labour') . '_' . ($title !== '' ? $title : 'document')));
+
+        return [
+            'labour' => trim($labour->labour_prefix . '. ' . $labour->labour_fullname),
+            'pages' => $pdf->pageCount(),
+            'from' => $used,
+            'open_url' => route('ai.file', ['file' => basename($file), 'name' => $name]),
+            'download_url' => route('ai.file', ['file' => basename($file), 'name' => $name, 'download' => 1]),
             'note' => 'ไฟล์เก็บไว้ 1 วัน',
         ];
     }
@@ -396,7 +454,29 @@ class LabourAssistant
                 ],
                 'required' => ['query', 'document'],
             ]),
-            $fn('retouch_labour_photo', 'รีทัช/แต่งรูปของแรงงานสำหรับใช้สมัครงาน ด้วย AI สร้างภาพ: ปรับแสง สี ความคมชัด ลบจุด เปลี่ยนพื้นหลัง (ค่าเริ่มต้นสีขาว) จัดกรอบครึ่งตัว จัดเสื้อผ้าให้เรียบร้อย โดยใบหน้ายังเป็นคนเดิม ใช้รูปโปรไฟล์ของแรงงานเป็นต้นฉบับ (หรือไฟล์เอกสารที่เป็นรูป ถ้าระบุ document) คืน image_url และ download_url', [
+            $fn('extract_document_pages', 'ดึง/แยกบางหน้าออกจากไฟล์ PDF ของแรงงานเป็นไฟล์ PDF ใหม่ (คุณภาพเท่าต้นฉบับ ไม่ใช้ AI) คืน open_url และ download_url ถ้าผู้ใช้บอกเป็นประเภทหน้า (เช่น หน้าวีซ่า) ไม่ใช่เลขหน้า ให้ read_labour_document ก่อนเพื่อหาว่าอยู่หน้าไหน', [
+                'type' => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
+                    'document' => ['type' => 'string', 'description' => 'document_key หรือชื่อเอกสาร/ชื่อไฟล์'],
+                    'pages' => ['type' => 'string', 'description' => 'เลขหน้า เช่น "2" หรือ "1-3" หรือ "1,3,5-6"'],
+                    'title' => ['type' => 'string', 'description' => 'ชื่อไฟล์สั้นๆ ภาษาอังกฤษ เช่น Visa'],
+                ],
+                'required' => ['query', 'document', 'pages'],
+            ]),
+            $fn('merge_labour_documents', 'รวมหลายไฟล์ของแรงงาน (PDF ทั้งไฟล์หรือบางหน้า และรูป JPG/PNG) เป็น PDF ไฟล์เดียวตามลำดับที่ให้ คืน open_url และ download_url (ไม่ใช้ AI)', [
+                'type' => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
+                    'parts' => ['type' => 'array', 'description' => 'ไฟล์ตามลำดับ (ไม่เกิน 10)', 'items' => ['type' => 'object', 'properties' => [
+                        'document' => ['type' => 'string', 'description' => 'document_key หรือชื่อเอกสาร'],
+                        'pages' => ['type' => 'string', 'description' => 'เลขหน้า (เว้นว่าง = ทุกหน้า)'],
+                    ], 'required' => ['document']]],
+                    'title' => ['type' => 'string', 'description' => 'ชื่อไฟล์สั้นๆ ภาษาอังกฤษ เช่น Passport_Visa'],
+                ],
+                'required' => ['query', 'parts'],
+            ]),
+            $fn('retouch_labour_photo','รีทัช/แต่งรูปของแรงงานสำหรับใช้สมัครงาน ด้วย AI สร้างภาพ: ปรับแสง สี ความคมชัด ลบจุด เปลี่ยนพื้นหลัง (ค่าเริ่มต้นสีขาว) จัดกรอบครึ่งตัว จัดเสื้อผ้าให้เรียบร้อย โดยใบหน้ายังเป็นคนเดิม ใช้รูปโปรไฟล์ของแรงงานเป็นต้นฉบับ (หรือไฟล์เอกสารที่เป็นรูป ถ้าระบุ document) คืน image_url และ download_url', [
                 'type' => 'object',
                 'properties' => [
                     'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
@@ -470,6 +550,7 @@ class LabourAssistant
 - "ข้อมูลครบไหม / มีอะไรผิดปกติ / ตรวจสุขภาพข้อมูล / ต้องแก้อะไรบ้าง" → check_data_quality (ใส่ filters เช่น company)
 - "ขอ Excel / ส่งออก / รายงาน / ดาวน์โหลด" → create_excel_report หลังจากรู้เงื่อนไขชัดแล้ว
 - "อ่าน / ดึงเนื้อหา / เทียบไฟล์พาสปอร์ต" → read_labour_document ; ถ้ามีไฟล์แนบมากับคำถาม ใช้เนื้อหานั้นได้เลย
+- "ดึงเฉพาะหน้าวีซ่าจากไฟล์ passport.pdf / แยกหน้า 2 ออกมา" → (ถ้าไม่ได้บอกเลขหน้า read_labour_document ก่อนเพื่อหาหน้า) → extract_document_pages ; "รวมพาสปอร์ตกับวีซ่าเป็นไฟล์เดียว" → merge_labour_documents
 - "รีทัชรูป / แต่งรูป / ทำรูปสมัครงาน / เปลี่ยนพื้นหลังรูป" ของแรงงาน → retouch_labour_photo (ทำได้จริง ห้ามตอบว่าระบบไม่มีฟังก์ชันนี้)
 - "แก้ / เปลี่ยน / อัปเดต / ปิดสถานะ / ย้ายบริษัท" → propose_update (ตามข้อ 10)
 - ชื่อบริษัทที่มี บจก./บริษัท/จำกัด หรือพิมพ์ย่อ และชื่อคนที่มี Mr./Ms. ค้นได้ทันที ไม่ต้องถามซ้ำ
@@ -498,6 +579,7 @@ class LabourAssistant
 12. ไฟล์แนบที่เป็นตาราง (Excel/CSV): แต่ละแถวคือหนึ่งรายการ ใช้คอลัมน์เลขพาสปอร์ต (หรือชื่อ) เป็น query จับคู่หัวตารางกับฟิลด์ของระบบเอง (เช่น "วีซ่าหมดอายุ" → labour_visa_date_end, "นายจ้าง" → company_id) ถ้ากำกวมให้ถามก่อน แก้หลายแถวให้เรียก propose_update ครั้งเดียวด้วย items แล้วสรุป: แถวที่แก้ได้ ตารางค่าเดิม→ใหม่ และแถวที่แก้ไม่ได้พร้อมเหตุผล ก่อนขอยืนยันครั้งเดียว
 13. คำขอแก้ "ทุกคน/ทั้งหมดของบริษัท X" หรือ "แรงงาน N คนของ X": ใช้ propose_update ด้วย filters (เช่น company + status_job) ไม่ใช่ query ชื่อบริษัท ผลลัพธ์บอกจำนวนที่พบ (matched) ถ้าต่างจากที่ผู้ใช้บอกให้ชี้ให้เห็นก่อนขอยืนยัน เมื่อทุกรายการเปลี่ยนเหมือนกันแสดงตารางการเปลี่ยนครั้งเดียวตามด้วยรายชื่อ (ย่อถ้าเกิน 30 คน)
 14. รีทัชรูป: เรียก retouch_labour_photo (ใส่ instructions ตามที่ผู้ใช้ขอ) แล้วตอบพร้อมรูป ![รูปที่รีทัชแล้ว](image_url) และลิงก์ [ดาวน์โหลดรูป](download_url) บอกว่าใช้รูปต้นฉบับไหน และไฟล์เก็บไว้ 1 วัน ถ้าแรงงานยังไม่มีรูปให้บอกให้อัปโหลดรูปในหน้าข้อมูลแรงงานก่อน รูปสมัครงานต้องเป็นหน้าจริงของคนนั้น ถ้าถูกขอให้เปลี่ยนหน้าตา อายุ สีผิว รูปร่าง หรือทำให้เป็นคนอื่น ให้ปฏิเสธสั้นๆ แล้วเสนอรีทัชแบบปกติแทน
+15. แยก/รวม PDF: ตอบพร้อมลิงก์ [เปิดไฟล์](open_url) · [ดาวน์โหลด PDF](download_url) บอกว่าใช้หน้าไหนจากไฟล์ไหน (ช่อง from) และไฟล์เก็บไว้ 1 วัน ถ้าหาหน้าจากผลอ่านเอกสาร ให้บอกด้วยว่าหน้านั้นคืออะไร ถ้าหาไม่เจอหรือไม่แน่ใจ ให้ถามเลขหน้าก่อน ห้ามเดา
 
 คอลัมน์ที่ใช้ใน Excel ได้: {$columns}
 

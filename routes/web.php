@@ -77,6 +77,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/ai-chat/message', [AiChatController::class, 'message'])->name('ai.message')->middleware('throttle:30,1');
     Route::get('/ai-chat/report/{file}', [AiChatController::class, 'report'])->name('ai.report');
     Route::get('/ai-chat/image/{file}', [AiChatController::class, 'image'])->name('ai.image');
+    Route::get('/ai-chat/file/{file}', [AiChatController::class, 'file'])->name('ai.file');
     Route::post('/ai-chat/feedback/{log}', [AiChatController::class, 'feedback'])->name('ai.feedback')->middleware('throttle:60,1');
     Route::get('/ai-chat/plan', [AiChatController::class, 'plan'])->name('ai.plan')->middleware('throttle:30,1');
 
