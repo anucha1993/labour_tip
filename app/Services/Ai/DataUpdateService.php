@@ -352,6 +352,14 @@ class DataUpdateService
         }
         $payload = $token !== '' ? Cache::get($this->key($user, $token)) : null;
         if (! is_array($payload)) {
+            // The chat history sent to the model keeps only the text, not tool results, so on the "ยืนยัน" turn it
+            // often does not know the token and makes one up — fall back to this user's latest pending proposal.
+            $latest = (string) Cache::get($this->key($user, 'latest'));
+            if ($latest !== '' && $latest !== $token && is_array($p = Cache::get($this->key($user, $latest)))) {
+                [$token, $payload] = [$latest, $p];
+            }
+        }
+        if (! is_array($payload)) {
             return ['error' => 'ไม่พบรายการแก้ไขที่รอยืนยัน หรือหมดเวลาแล้ว (' . self::TTL_MINUTES . ' นาที) กรุณาเสนอการแก้ไขใหม่ด้วย propose_update'];
         }
         if (($payload['entity'] ?? '') === 'labour_photo') {
