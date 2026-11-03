@@ -6,6 +6,8 @@
 @push('head')
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 @endpush
 
 @section('content')
@@ -127,15 +129,64 @@
         var el = document.createElement('div');
         el.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-ai');
         var reportHtml = '';
-        (reports || []).forEach(function (r) {
+        (reports || []).forEach(function (r, i) {
+            if (r.kind === 'chart') {
+                reportHtml += '<div class="ai-chart" data-chart="' + i + '"><div class="ai-chart-head"><div><b>' + esc(r.title) + '</b><div class="small text-3">' + esc(r.subtitle || '') + '</div></div>'
+                    + '<button type="button" class="btn btn-soft btn-sm" data-png><i class="mdi mdi-download"></i> ดาวน์โหลด PNG</button></div><div class="ai-chart-box"><canvas></canvas></div></div>';
+                return;
+            }
+            if (r.kind === 'pptx') {
+                reportHtml += '<div><a class="report-chip report-chip-pptx" href="' + esc(r.download_url) + '" data-no-loader><i class="mdi mdi-file-powerpoint"></i>' + esc(r.title) + ' · ' + esc(r.slides) + ' สไลด์ <i class="mdi mdi-download"></i></a></div>';
+                return;
+            }
             reportHtml += '<div><a class="report-chip" href="' + esc(r.download_url) + '" data-no-loader><i class="mdi mdi-file-excel"></i>' + esc(r.title) + ' · ' + esc(r.rows) + ' แถว' + (r.truncated ? ' (ตัดที่ 5,000)' : '') + ' <i class="mdi mdi-download"></i></a></div>';
         });
         el.innerHTML = (role === 'user' && userAvatar ? '<img class="avatar avatar-img" src="' + esc(userAvatar) + '" alt="">' : '<span class="avatar">' + (role === 'user' ? esc(userInitial) : '<i class="mdi mdi-robot"></i>') + '</span>') +
             '<div><div class="msg-body">' + (role === 'user' ? esc(content).replace(/\n/g, '<br>') : render(content)) + reportHtml + '</div>' +
             '<div class="msg-meta">' + esc(meta || time()) + '</div></div>';
         log.appendChild(el);
+        drawCharts(el, reports || []);
         log.scrollTop = log.scrollHeight;
         return el;
+    }
+    // Charts from create_chart (numbers come from the database on the server)
+    var PALETTE = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569', '#0d9488', '#a16207'];
+    var STACK = { 'หมดอายุแล้ว': '#dc2626', 'ภายใน 30 วัน': '#f59e0b', '31–90 วัน': '#2563eb' };
+    var whiteBg = { id: 'whiteBg', beforeDraw: function (c) { var x = c.ctx; x.save(); x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.restore(); } };
+    function drawCharts(el, reports) {
+        if (!window.Chart) return;
+        el.querySelectorAll('[data-chart]').forEach(function (box) {
+            var r = reports[+box.dataset.chart], round = r.type === 'pie' || r.type === 'doughnut', horiz = r.type === 'horizontal_bar';
+            var sum = r.datasets[0].data.reduce(function (a, b) { return a + b; }, 0);
+            var chart = new Chart(box.querySelector('canvas'), {
+                type: horiz ? 'bar' : r.type,
+                data: { labels: r.labels, datasets: r.datasets.map(function (d, i) {
+                    var c = STACK[d.label] || PALETTE[i % PALETTE.length];
+                    return { label: d.label, data: d.data, borderWidth: round ? 2 : 0, borderColor: round ? '#fff' : c, borderRadius: round ? 0 : 4, tension: 0.3,
+                        backgroundColor: round || (r.datasets.length === 1 && r.type !== 'line') ? r.labels.map(function (_, j) { return round ? PALETTE[j % PALETTE.length] : c; }) : c };
+                }) },
+                plugins: window.ChartDataLabels ? [ChartDataLabels, whiteBg] : [whiteBg],
+                options: {
+                    indexAxis: horiz ? 'y' : 'x', maintainAspectRatio: false, animation: false,
+                    layout: { padding: { top: 18, right: 16 } },
+                    plugins: {
+                        legend: { display: round || r.datasets.length > 1, position: round ? 'right' : 'top' },
+                        tooltip: { callbacks: { label: function (c) { var v = c.parsed && typeof c.parsed === 'object' ? (horiz ? c.parsed.x : c.parsed.y) : c.parsed; return ' ' + (c.dataset.label || '') + ': ' + Number(v).toLocaleString() + ' คน'; } } },
+                        datalabels: { font: { weight: 'bold' }, anchor: round || r.stacked ? 'center' : 'end', align: round || r.stacked ? 'center' : 'end', offset: 2,
+                            display: function (c) { return c.dataset.data[c.dataIndex] > 0; },
+                            color: function (c) { return round || r.stacked ? '#fff' : '#334155'; },
+                            formatter: function (v) { return round && sum ? [v.toLocaleString(), Math.round(v / sum * 100) + '%'] : v.toLocaleString(); } }
+                    },
+                    scales: round ? {} : { x: { stacked: !!r.stacked, grid: { display: horiz } }, y: { stacked: !!r.stacked, beginAtZero: true, grid: { display: !horiz }, ticks: { precision: 0 } } }
+                }
+            });
+            box.querySelector('[data-png]').addEventListener('click', function () {
+                var a = document.createElement('a');
+                a.href = chart.toBase64Image('image/png', 1);
+                a.download = (r.title || 'chart').replace(/[\/:*?"<>|]+/g, '_') + '.png';
+                a.click();
+            });
+        });
     }
     // 👍/👎 + follow-up chips under an answer
     function addExtras(el, data) {

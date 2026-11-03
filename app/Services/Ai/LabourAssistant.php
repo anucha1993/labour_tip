@@ -7,6 +7,7 @@ use App\Models\labour\LabourDocument;
 use App\Models\User;
 use App\Services\ExpiryService;
 use App\Support\PdfPages;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -115,6 +116,12 @@ class LabourAssistant
         if (in_array('propose_update', $used, true)) {
             return ['ยืนยัน', 'ยกเลิก'];
         }
+        if (in_array('create_presentation', $used, true)) {
+            return ['เพิ่มรายชื่อคนที่เอกสารใกล้หมดอายุ', 'ทำ PowerPoint ภาพรวมทั้งระบบ'];
+        }
+        if (in_array('create_chart', $used, true)) {
+            return ['ขอ Excel รายชื่อประกอบกราฟ', 'ขอกราฟวีซ่าที่จะหมดอายุ 12 เดือน', 'แยกตามเอเจนซี่'];
+        }
         if (in_array('extract_document_pages', $used, true) || in_array('merge_labour_documents', $used, true)) {
             return ['รวมกับไฟล์พาสปอร์ตเป็นไฟล์เดียว', 'แยกหน้าอื่นออกมาด้วย'];
         }
@@ -167,6 +174,8 @@ class LabourAssistant
             'list_companies' => $this->query->listCompanies($args['keyword'] ?? null),
             'list_agencies' => $this->query->listAgencies(),
             'create_excel_report' => $this->createReport($args, $reports),
+            'create_chart' => $this->createChart($args, $reports),
+            'create_presentation' => $this->createPresentation($args, $reports),
             'get_change_history' => $this->query->changeHistory((string) ($args['query'] ?? ''), $args['date_from'] ?? null, $args['date_to'] ?? null, (int) ($args['limit'] ?? 20)),
             'get_expiry_timeline' => $this->query->expiryTimeline((string) ($args['type'] ?? 'visa'), (int) ($args['months'] ?? 6), $args['group_by'] ?? null, is_array($args['filters'] ?? null) ? $args['filters'] : []),
             'check_data_quality' => $this->query->dataQualityCheck(is_array($args['filters'] ?? null) ? $args['filters'] : []),
@@ -333,6 +342,64 @@ class LabourAssistant
         ];
     }
 
+    /**
+     * A chart for the chat page (Chart.js), its numbers computed here from the database — never typed in by the model.
+     * Sent to the page in `reports` with kind=chart.
+     */
+    private function createChart(array $args, array &$reports): array
+    {
+        $c = app(LabourAnalytics::class)->chart($args);
+        if (isset($c['error'])) {
+            return $c;
+        }
+        if (! empty($c['empty'])) {
+            return ['created' => false, 'message' => 'ไม่พบข้อมูลตามเงื่อนไข จึงไม่ได้สร้างกราฟ', 'filters' => $c['filters']];
+        }
+        $reports[] = ['kind' => 'chart'] + array_intersect_key($c, array_flip(['title', 'subtitle', 'type', 'stacked', 'labels', 'datasets']));
+
+        return ['created' => true] + array_intersect_key($c, array_flip(['title', 'labels', 'datasets', 'total']));
+    }
+
+    /**
+     * PowerPoint (.pptx) built from the database by LabourDeck: company scope (for the employer) or the whole system.
+     * The model only adds its insights / recommendations; every number and chart comes from the data.
+     */
+    private function createPresentation(array $args, array &$reports): array
+    {
+        $scope = ($args['scope'] ?? 'company') === 'system' ? 'system' : 'company';
+        $company = trim((string) ($args['company'] ?? ''));
+        if ($scope === 'company' && $company === '') {
+            return ['error' => 'ระบุชื่อบริษัท (company) หรือใช้ scope=system สำหรับภาพรวมทั้งระบบ'];
+        }
+        $strings = fn ($v) => array_values(array_filter(array_map(fn ($s) => mb_substr(trim((string) $s), 0, 300), is_array($v) ? $v : []), 'strlen'));
+
+        $deck = app(LabourDeck::class)->build($scope, $company, [
+            'title' => mb_substr(trim((string) ($args['title'] ?? '')), 0, 120),
+            'insights' => array_slice($strings($args['insights'] ?? []), 0, 6),
+            'recommendations' => array_slice($strings($args['recommendations'] ?? []), 0, 6),
+            'include_names' => $scope === 'company' && ! empty($args['include_names']),
+            'names_within_days' => (int) ($args['names_within_days'] ?? 60),
+            'prepared_by' => $this->actor ? (string) $this->actor->name : '',
+        ]);
+        if (isset($deck['error'])) {
+            return $deck;
+        }
+
+        $file = 'ai-files/' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(8)) . '.pptx';
+        Storage::disk('local')->put($file, $deck['bytes']);
+        $this->cleanupOld('ai-files');
+        $name = preg_replace('/[^\pL\pN_\-]+/u', '_', 'Labour_Report_' . ($scope === 'company' ? $deck['company'] : 'ทั้งระบบ') . '_' . now()->format('Ymd'));
+        $report = [
+            'kind' => 'pptx',
+            'title' => $deck['title'],
+            'slides' => $deck['slides'],
+            'download_url' => route('ai.file', ['file' => basename($file), 'name' => $name]),
+        ];
+        $reports[] = $report;
+
+        return ['created' => true, 'company' => $deck['company'], 'slides' => $deck['slides'], 'outline' => $deck['outline'], 'numbers' => $deck['numbers'], 'download_url' => $report['download_url'], 'note' => 'ไฟล์เก็บไว้ 1 วัน'];
+    }
+
     private function createReport(array $args, array &$reports): array
     {
         $filters = $args['filters'] ?? [];
@@ -454,12 +521,38 @@ class LabourAssistant
                 ],
                 'required' => ['query', 'document'],
             ]),
-            $fn('extract_document_pages', 'ดึง/แยกบางหน้าออกจากไฟล์ PDF ของแรงงานเป็นไฟล์ PDF ใหม่ (คุณภาพเท่าต้นฉบับ ไม่ใช้ AI) คืน open_url และ download_url ถ้าผู้ใช้บอกเป็นประเภทหน้า (เช่น หน้าวีซ่า) ไม่ใช่เลขหน้า ให้ read_labour_document ก่อนเพื่อหาว่าอยู่หน้าไหน', [
+            $fn('create_chart', 'สร้างกราฟแสดงในแชต (ตัวเลขคำนวณจากฐานข้อมูลจริงโดยระบบ) ผู้ใช้ดาวน์โหลดเป็นรูป PNG ไปใส่สไลด์ได้ source: group = จำนวนแรงงานแยกตาม group_by, expiry_timeline = เอกสารที่จะหมดอายุแต่ละเดือน (expiry_type, months), expiry_status = เอกสารทุกประเภท: หมดแล้ว / ภายใน 30 วัน / 31–90 วัน เรียกได้หลายครั้งเพื่อทำหลายกราฟ', [
+                'type' => 'object',
+                'properties' => [
+                    'title' => ['type' => 'string', 'description' => 'หัวกราฟภาษาไทยสั้นๆ เช่น แรงงานแยกตามสัญชาติ'],
+                    'source' => ['type' => 'string', 'enum' => ['group', 'expiry_timeline', 'expiry_status']],
+                    'group_by' => ['type' => 'string', 'enum' => array_keys(LabourQueryService::GROUP_FIELDS), 'description' => 'สำหรับ source=group'],
+                    'expiry_type' => ['type' => 'string', 'enum' => array_keys(ExpiryService::TYPES), 'description' => 'สำหรับ source=expiry_timeline'],
+                    'months' => ['type' => 'integer', 'description' => 'สำหรับ expiry_timeline 1-24 (ค่าเริ่มต้น 6)'],
+                    'chart_type' => ['type' => 'string', 'enum' => ['bar', 'horizontal_bar', 'pie', 'doughnut', 'line'], 'description' => 'ไม่ระบุ = ระบบเลือกให้'],
+                    'filters' => $filters,
+                ],
+                'required' => ['title', 'source'],
+            ]),
+            $fn('create_presentation', 'สร้างไฟล์ PowerPoint (.pptx) วิเคราะห์ข้อมูลแรงงาน ตัวเลขและกราฟทั้งหมดระบบดึงจากฐานข้อมูลเอง (กราฟแก้ไขได้ใน PowerPoint) scope=company: รายบริษัทสำหรับนำเสนอนายจ้าง (สถานะการทำงาน สัญชาติ เพศ เอเจนซี่ สถานะเอกสาร วีซ่า/ใบอนุญาตที่จะหมดรายเดือน) scope=system: ภาพรวมทั้งระบบ (+บริษัทที่มีแรงงานมากสุด) คืน download_url', [
+                'type' => 'object',
+                'properties' => [
+                    'scope' => ['type' => 'string', 'enum' => ['company', 'system']],
+                    'company' => ['type' => 'string', 'description' => 'ชื่อบริษัท (scope=company)'],
+                    'title' => ['type' => 'string', 'description' => 'ชื่อเรื่องบนหน้าปก (ไม่ระบุ = ค่ามาตรฐาน)'],
+                    'insights' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ข้อสังเกต 3–5 ข้อ เฉพาะที่อิงตัวเลขจากเครื่องมือที่เรียกแล้วในการสนทนานี้ (ไม่มี = เว้นว่าง ระบบมีสไลด์สรุปตัวเลขอัตโนมัติอยู่แล้ว)'],
+                    'recommendations' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ข้อเสนอแนะสำหรับนายจ้าง/ทีมงาน 3–5 ข้อ'],
+                    'include_names' => ['type' => 'boolean', 'description' => 'ใส่ตารางรายชื่อแรงงาน (ชื่อ เลขพาสปอร์ต) ที่เอกสารหมดแล้ว/ใกล้หมด เฉพาะ scope=company และเฉพาะเมื่อผู้ใช้ขอรายชื่อ'],
+                    'names_within_days' => ['type' => 'integer', 'description' => 'ช่วงวันของรายชื่อ (ค่าเริ่มต้น 60)'],
+                ],
+                'required' => ['scope'],
+            ]),
+            $fn('extract_document_pages','ดึง/แยกบางหน้าออกจากไฟล์ PDF ของแรงงานเป็นไฟล์ PDF ใหม่ (คุณภาพเท่าต้นฉบับ ไม่ใช้ AI) คืน open_url และ download_url ถ้าผู้ใช้บอกเป็นประเภทหน้า (เช่น หน้าวีซ่า) ไม่ใช่เลขหน้า ให้ read_labour_document ก่อนเพื่อหาว่าอยู่หน้าไหน', [
                 'type' => 'object',
                 'properties' => [
                     'query' => ['type' => 'string', 'description' => 'ชื่อหรือเลขพาสปอร์ตของแรงงาน'],
                     'document' => ['type' => 'string', 'description' => 'document_key หรือชื่อเอกสาร/ชื่อไฟล์'],
-                    'pages' => ['type' => 'string', 'description' => 'เลขหน้า เช่น "2" หรือ "1-3" หรือ "1,3,5-6"'],
+                    'pages' => ['type' => 'string', 'description' => 'เลขหน้าตามลำดับที่ต้องการในไฟล์ใหม่ เช่น "2" หรือ "1-3" หรือ "3,1,2,4" (จัดเรียงใหม่ = ใส่ครบทุกหน้าตามลำดับใหม่)'],
                     'title' => ['type' => 'string', 'description' => 'ชื่อไฟล์สั้นๆ ภาษาอังกฤษ เช่น Visa'],
                 ],
                 'required' => ['query', 'document', 'pages'],
@@ -550,7 +643,10 @@ class LabourAssistant
 - "ข้อมูลครบไหม / มีอะไรผิดปกติ / ตรวจสุขภาพข้อมูล / ต้องแก้อะไรบ้าง" → check_data_quality (ใส่ filters เช่น company)
 - "ขอ Excel / ส่งออก / รายงาน / ดาวน์โหลด" → create_excel_report หลังจากรู้เงื่อนไขชัดแล้ว
 - "อ่าน / ดึงเนื้อหา / เทียบไฟล์พาสปอร์ต" → read_labour_document ; ถ้ามีไฟล์แนบมากับคำถาม ใช้เนื้อหานั้นได้เลย
+- "กราฟ / Analytic / วิเคราะห์ / ทำ Present ให้นายจ้าง" → create_chart (สร้างได้จริง ห้ามตอบว่าทำกราฟไม่ได้) ถ้าขอภาพรวมของบริษัทให้ทำชุดกราฟ: สถานะการทำงาน (group_by status_job), สัญชาติ, เพศ, สถานะเอกสาร (expiry_status) และวีซ่าที่จะหมด 6 เดือน (expiry_timeline) โดยใส่ filters.company ทุกกราฟ (กราฟเอกสารนับเฉพาะคนที่ทำงานอยู่)
+- "ทำ PowerPoint / Present / สไลด์ / ไฟล์นำเสนอ" → create_presentation (scope=company ถ้าระบุบริษัท, scope=system ถ้าขอภาพรวมทั้งระบบ) ใส่ include_names=true เฉพาะเมื่อผู้ใช้ขอรายชื่อ ถ้าต้องการใส่ insights ให้เรียก count_labours / get_expiry_timeline ก่อนเพื่อให้ข้อสังเกตอิงตัวเลขจริง
 - "ดึงเฉพาะหน้าวีซ่าจากไฟล์ passport.pdf / แยกหน้า 2 ออกมา" → (ถ้าไม่ได้บอกเลขหน้า read_labour_document ก่อนเพื่อหาหน้า) → extract_document_pages ; "รวมพาสปอร์ตกับวีซ่าเป็นไฟล์เดียว" → merge_labour_documents
+- "จัดระเบียบ / เรียงหน้าใหม่ เช่น เอาหน้า Visa ขึ้นก่อน Passport หน้า 2" → read_labour_document เพื่อรู้ว่าแต่ละหน้าคืออะไร → extract_document_pages ด้วยเลขหน้าครบทุกหน้าตามลำดับใหม่ (หน้าที่ผู้ใช้ไม่ได้พูดถึงให้ต่อท้ายตามลำดับเดิม ไม่ทิ้งหน้าใด) แล้วตอบเป็นตาราง ลำดับใหม่ | หน้าเดิม | คือหน้าอะไร
 - "รีทัชรูป / แต่งรูป / ทำรูปสมัครงาน / เปลี่ยนพื้นหลังรูป" ของแรงงาน → retouch_labour_photo (ทำได้จริง ห้ามตอบว่าระบบไม่มีฟังก์ชันนี้)
 - "แก้ / เปลี่ยน / อัปเดต / ปิดสถานะ / ย้ายบริษัท" → propose_update (ตามข้อ 10)
 - ชื่อบริษัทที่มี บจก./บริษัท/จำกัด หรือพิมพ์ย่อ และชื่อคนที่มี Mr./Ms. ค้นได้ทันที ไม่ต้องถามซ้ำ
@@ -579,7 +675,9 @@ class LabourAssistant
 12. ไฟล์แนบที่เป็นตาราง (Excel/CSV): แต่ละแถวคือหนึ่งรายการ ใช้คอลัมน์เลขพาสปอร์ต (หรือชื่อ) เป็น query จับคู่หัวตารางกับฟิลด์ของระบบเอง (เช่น "วีซ่าหมดอายุ" → labour_visa_date_end, "นายจ้าง" → company_id) ถ้ากำกวมให้ถามก่อน แก้หลายแถวให้เรียก propose_update ครั้งเดียวด้วย items แล้วสรุป: แถวที่แก้ได้ ตารางค่าเดิม→ใหม่ และแถวที่แก้ไม่ได้พร้อมเหตุผล ก่อนขอยืนยันครั้งเดียว
 13. คำขอแก้ "ทุกคน/ทั้งหมดของบริษัท X" หรือ "แรงงาน N คนของ X": ใช้ propose_update ด้วย filters (เช่น company + status_job) ไม่ใช่ query ชื่อบริษัท ผลลัพธ์บอกจำนวนที่พบ (matched) ถ้าต่างจากที่ผู้ใช้บอกให้ชี้ให้เห็นก่อนขอยืนยัน เมื่อทุกรายการเปลี่ยนเหมือนกันแสดงตารางการเปลี่ยนครั้งเดียวตามด้วยรายชื่อ (ย่อถ้าเกิน 30 คน)
 14. รีทัชรูป: เรียก retouch_labour_photo (ใส่ instructions ตามที่ผู้ใช้ขอ) แล้วตอบพร้อมรูป ![รูปที่รีทัชแล้ว](image_url) และลิงก์ [ดาวน์โหลดรูป](download_url) บอกว่าใช้รูปต้นฉบับไหน และไฟล์เก็บไว้ 1 วัน ถ้าแรงงานยังไม่มีรูปให้บอกให้อัปโหลดรูปในหน้าข้อมูลแรงงานก่อน รูปสมัครงานต้องเป็นหน้าจริงของคนนั้น ถ้าถูกขอให้เปลี่ยนหน้าตา อายุ สีผิว รูปร่าง หรือทำให้เป็นคนอื่น ให้ปฏิเสธสั้นๆ แล้วเสนอรีทัชแบบปกติแทน
-15. แยก/รวม PDF: ตอบพร้อมลิงก์ [เปิดไฟล์](open_url) · [ดาวน์โหลด PDF](download_url) บอกว่าใช้หน้าไหนจากไฟล์ไหน (ช่อง from) และไฟล์เก็บไว้ 1 วัน ถ้าหาหน้าจากผลอ่านเอกสาร ให้บอกด้วยว่าหน้านั้นคืออะไร ถ้าหาไม่เจอหรือไม่แน่ใจ ให้ถามเลขหน้าก่อน ห้ามเดา
+15. กราฟ: กราฟจะแสดงใต้คำตอบเอง ห้ามวาดกราฟด้วยข้อความหรือใส่ลิงก์รูป ให้เขียนบทสรุปสำหรับนำเสนอ: บรรทัดแรกตัวเลขหลัก (จำนวนแรงงานทั้งหมด/ทำงานอยู่) แล้ว 3–5 ข้อสังเกตสำคัญจากตัวเลขของ create_chart (สัดส่วน % กลุ่มใหญ่สุด เอกสารที่ต้องเร่งต่ออายุ) และสิ่งที่นายจ้างควรทำต่อ ตัวเลขทุกตัวต้องมาจากผลของเครื่องมือ บอกด้วยว่ากดปุ่ม "ดาวน์โหลด PNG" ใต้กราฟเพื่อนำไปใส่สไลด์ได้
+17. PowerPoint: ตอบพร้อมลิงก์ [ดาวน์โหลด PowerPoint](download_url) จำนวนสไลด์ และรายการหัวข้อ (outline) สรุปตัวเลขหลักจาก numbers ในคำตอบด้วย บอกว่ากราฟในไฟล์แก้ไขได้ใน PowerPoint และไฟล์เก็บไว้ 1 วัน ถ้าชื่อบริษัทตรงหลายบริษัท ให้แสดง candidates ให้เลือก
+16. แยก/รวม PDF: ตอบพร้อมลิงก์ [เปิดไฟล์](open_url) · [ดาวน์โหลด PDF](download_url) บอกว่าใช้หน้าไหนจากไฟล์ไหน (ช่อง from) และไฟล์เก็บไว้ 1 วัน ถ้าหาหน้าจากผลอ่านเอกสาร ให้บอกด้วยว่าหน้านั้นคืออะไร ถ้าหาไม่เจอหรือไม่แน่ใจ ให้ถามเลขหน้าก่อน ห้ามเดา
 
 คอลัมน์ที่ใช้ใน Excel ได้: {$columns}
 

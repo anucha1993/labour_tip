@@ -190,15 +190,16 @@ class AiChatController extends Controller
         return Storage::disk('local')->download($path, 'AI_Report_' . $file);
     }
 
-    /** PDF split / merged by the assistant (files live 24h in storage/app/ai-files): inline, or ?download=1 */
+    /** PDF split / merged or PowerPoint made by the assistant (files live 24h in storage/app/ai-files): PDF inline unless ?download=1 */
     public function file(Request $request, string $file)
     {
-        abort_unless(preg_match('/^[A-Za-z0-9_]+\.pdf$/', $file), 404);
+        abort_unless(preg_match('/^[A-Za-z0-9_]+\.(pdf|pptx)$/', $file, $m), 404);
         $path = 'ai-files/' . $file;
         abort_unless(Storage::disk('local')->exists($path), 404, 'ไฟล์หมดอายุหรือไม่พบ กรุณาสั่งใหม่');
-        $name = (preg_replace('/[^\pL\pN_\-]+/u', '_', (string) $request->query('name')) ?: 'document') . '.pdf';
+        $name = (preg_replace('/[^\pL\pN_\-]+/u', '_', (string) $request->query('name')) ?: 'document') . '.' . $m[1];
 
-        return $request->boolean('download')
+        // PowerPoint always downloads; PDF opens in the browser unless ?download=1
+        return $m[1] === 'pptx' || $request->boolean('download')
             ? Storage::disk('local')->download($path, $name)
             : Storage::disk('local')->response($path, $name, ['Content-Type' => 'application/pdf', 'Cache-Control' => 'private, max-age=86400']);
     }
