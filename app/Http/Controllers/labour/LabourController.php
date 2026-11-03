@@ -126,11 +126,12 @@ class LabourController extends Controller
     }
 
     /** Inline profile photo (streams local files, redirects to a signed URL on R2). */
-    public function photo(LabourModel $labourModel, LabourPhotoService $photos)
+    /** Profile photo (512 thumbnail); ?original=1 = the full-resolution upload for printing. */
+    public function photo(Request $request, LabourModel $labourModel, LabourPhotoService $photos)
     {
         abort_unless($photos->exists($labourModel), 404);
 
-        return $photos->response($labourModel);
+        return $photos->response($labourModel, $request->boolean('original'));
     }
 
     public function show(LabourModel $labourModel)
@@ -246,7 +247,7 @@ class LabourController extends Controller
             'labour_escape_date' => ['nullable', 'date'],
             'labour_status' => ['required', Rule::in(['enable', 'disable'])],
             'labour_note' => ['nullable', 'string', 'max:5000'],
-            'labour_photo' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'labour_photo' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
             'remove_photo' => ['nullable', 'boolean'],
             'documents' => ['nullable', 'array', 'max:' . self::MAX_DOCS_PER_SAVE],
             'documents.*.name' => ['nullable', 'string', 'max:100', 'required_with:documents.*.file'],
@@ -262,7 +263,7 @@ class LabourController extends Controller
             'documents.*.file.max' => 'ไฟล์เอกสารต้องมีขนาดไม่เกิน 10 MB',
             'labour_photo.image' => 'รูปแรงงานต้องเป็นไฟล์รูปภาพ',
             'labour_photo.mimes' => 'รูปแรงงานรองรับเฉพาะ JPG, PNG หรือ WEBP',
-            'labour_photo.max' => 'รูปแรงงานต้องมีขนาดไม่เกิน 5 MB',
+            'labour_photo.max' => 'รูปแรงงานต้องมีขนาดไม่เกิน 15 MB',
             'documents.max' => 'อัปโหลดได้ครั้งละไม่เกิน ' . self::MAX_DOCS_PER_SAVE . ' ไฟล์',
             '*.date' => 'รูปแบบวันที่ไม่ถูกต้อง',
         ]);

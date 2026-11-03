@@ -51,6 +51,7 @@ class LabourModel extends Model
         'labour_file_work',
         'labour_photo',
         'labour_photo_disk',
+        'labour_photo_original',
         'created_by',
         'updated_by',
     ];
@@ -79,6 +80,17 @@ class LabourModel extends Model
     public function hasPhoto(): bool
     {
         return ! empty($this->labour_photo);
+    }
+
+    public function hasPhotoOriginal(): bool
+    {
+        return ! empty($this->labour_photo_original);
+    }
+
+    /** Full-resolution original of the profile photo (for printing), or null when only the thumbnail exists. */
+    public function photoOriginalUrl(): ?string
+    {
+        return $this->hasPhotoOriginal() ? route('labour.photo', [$this->labour_id, 'original' => 1]) : null;
     }
 
     /** URL of the profile photo through the app (auth applies), or null. */

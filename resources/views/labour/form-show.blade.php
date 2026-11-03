@@ -37,7 +37,12 @@
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap align-items-center gap-3">
             @if ($labour->hasPhoto())
-                <a href="{{ $labour->photoUrl() }}" target="_blank" rel="noopener" title="เปิดรูปขนาดเต็ม"><img src="{{ $labour->photoUrl() }}" alt="รูปแรงงาน" class="avatar avatar-img labour-photo-lg"></a>
+                <div class="text-center">
+                    <a href="{{ $labour->photoOriginalUrl() ?? $labour->photoUrl() }}" target="_blank" rel="noopener" title="เปิดรูปขนาดเต็ม"><img src="{{ $labour->photoUrl() }}" alt="รูปแรงงาน" class="avatar avatar-img labour-photo-lg"></a>
+                    @if ($labour->hasPhotoOriginal())
+                        <div><a href="{{ $labour->photoOriginalUrl() }}" target="_blank" rel="noopener" class="small" data-no-loader><i class="mdi mdi-printer"></i> ต้นฉบับสำหรับพิมพ์</a></div>
+                    @endif
+                </div>
             @else
                 <span class="avatar avatar-lg">{{ mb_strtoupper(mb_substr($labour->labour_fullname, 0, 1)) }}</span>
             @endif

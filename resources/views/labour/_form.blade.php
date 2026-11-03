@@ -33,7 +33,7 @@
                 </label>
                 <div class="labour-photo-meta">
                     <div class="fw-semibold">รูปแรงงาน</div>
-                    <div class="text-3 small mb-2">JPG, PNG, WEBP ไม่เกิน 5 MB · ระบบย่อและตัดเป็นสี่เหลี่ยมจัตุรัสให้ · แสดงใน Worker App ด้วย</div>
+                    <div class="text-3 small mb-2">JPG, PNG, WEBP ไม่เกิน 15 MB · เก็บไฟล์ต้นฉบับความละเอียดเต็มไว้สำหรับพิมพ์ · รูปที่แสดงบนเว็บ/Worker App ย่อเป็นสี่เหลี่ยมจัตุรัส</div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <input type="file" name="labour_photo" id="labour_photo" accept="image/jpeg,image/png,image/webp" class="d-none" data-photo-input>
                         <button type="button" class="btn btn-soft btn-sm" data-photo-choose><i class="mdi mdi-upload"></i> เลือกรูป</button>

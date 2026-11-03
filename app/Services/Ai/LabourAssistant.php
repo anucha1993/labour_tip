@@ -6,6 +6,7 @@ use App\Exports\AiLabourExport;
 use App\Models\labour\LabourDocument;
 use App\Models\User;
 use App\Services\ExpiryService;
+use App\Services\LabourPhotoService;
 use App\Support\PdfPages;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -268,11 +269,11 @@ class LabourAssistant
         $name = trim($labour->labour_prefix . '. ' . $labour->labour_fullname);
 
         if ($document === '' && $labour->hasPhoto()) {
-            $disk = Storage::disk($labour->labour_photo_disk ?: 'public');
-            if (! $disk->exists($labour->labour_photo)) {
+            $src = app(LabourPhotoService::class)->sourceBytes($labour); // full-resolution original when kept
+            if (! $src) {
                 return ['error' => 'ไม่พบไฟล์รูปแรงงานในที่เก็บไฟล์', 'labour' => $name];
             }
-            [$bytes, $mime, $source] = [$disk->get($labour->labour_photo), 'image/jpeg', 'รูปแรงงาน (โปรไฟล์)'];
+            [$bytes, $mime, $source] = [$src['bytes'], $src['mime'], $src['original'] ? 'รูปแรงงาน (ไฟล์ต้นฉบับความละเอียดเต็ม)' : 'รูปแรงงาน (โปรไฟล์ 512×512 — ไม่มีไฟล์ต้นฉบับ อัปโหลดรูปใหม่เพื่อให้ได้รายละเอียดเต็ม)'];
         } else {
             $images = array_values(array_filter($candidates, fn ($c) => preg_match('/\.(jpe?g|png|webp)$/i', (string) $c['ไฟล์'])));
             if ($doc && ! in_array($doc->extension(), ['jpg', 'jpeg', 'png', 'webp'], true)) {
