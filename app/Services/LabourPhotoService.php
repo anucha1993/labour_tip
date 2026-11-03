@@ -43,6 +43,29 @@ class LabourPhotoService
         return $path;
     }
 
+    /**
+     * Replace the profile photo with image bytes (the AI-retouched picture). The old file is KEPT and the change goes
+     * through Eloquent, so the labour edit history records old -> new path and the old photo can be restored.
+     *
+     * @return array{path: string, old: ?string}
+     */
+    public function replaceKeepingOld(LabourModel $labour, string $bytes, string $updatedBy): array
+    {
+        $jpeg = SquareImage::fromBytes($bytes, self::SIZE, 90);
+        $disk = LabourDocument::targetDisk();
+        $path = 'photos/' . $labour->labour_id . '_ai_' . Str::lower(Str::random(8)) . '.jpg';
+        Storage::disk($disk)->put($path, $jpeg, ['visibility' => 'private']);
+
+        $old = $labour->labour_photo ? ($labour->labour_photo_disk ?: 'public') . ':' . $labour->labour_photo : null;
+        $data = ['labour_photo' => $path, 'labour_photo_disk' => $disk];
+        if (in_array('updated_by', $labour->getFillable(), true)) {
+            $data['updated_by'] = $updatedBy;
+        }
+        $labour->update($data);
+
+        return ['path' => $path, 'old' => $old];
+    }
+
     public function remove(LabourModel $labour, bool $save = true): void
     {
         if (! $labour->labour_photo) {

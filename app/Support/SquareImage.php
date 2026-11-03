@@ -20,7 +20,22 @@ class SquareImage
             throw new RuntimeException('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาใช้ไฟล์ JPG, PNG หรือ WEBP');
         }
 
-        $src = self::applyExifOrientation($src, $file->getRealPath());
+        return self::square(self::applyExifOrientation($src, $file->getRealPath()), $size, $quality);
+    }
+
+    /** Same as fromUpload() for image bytes already in memory (e.g. a photo retouched by the AI). */
+    public static function fromBytes(string $raw, int $size, int $quality = 85): string
+    {
+        $src = $raw !== '' ? @imagecreatefromstring($raw) : false;
+        if (! $src) {
+            throw new RuntimeException('ไม่สามารถอ่านไฟล์รูปภาพได้');
+        }
+
+        return self::square($src, $size, $quality);
+    }
+
+    private static function square($src, int $size, int $quality): string
+    {
 
         $w = imagesx($src);
         $h = imagesy($src);

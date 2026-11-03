@@ -6,11 +6,13 @@ use App\Models\agency\AgencyModel;
 use App\Models\company\CompanyModel;
 use App\Models\labour\LabourModel;
 use App\Models\User;
+use App\Services\LabourPhotoService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -310,6 +312,38 @@ class DataUpdateService
     }
 
     /** Step 2: write the stored proposal. */
+    /**
+     * Step 1 for a profile photo: replace the labour's photo with a picture the assistant made (storage/app/ai-images).
+     * Confirmed with the same apply_update / cancel_update; the old photo file is kept.
+     */
+    public function proposePhoto(User $user, string $query, string $image): array
+    {
+        $file = basename((string) parse_url(trim($image), PHP_URL_PATH));
+        if (! preg_match('/^[A-Za-z0-9_]+\.jpg$/', $file) || ! Storage::disk('local')->exists('ai-images/' . $file)) {
+            return ['error' => 'ไม่พบรูปที่รีทัชไว้ (ไฟล์เก็บไว้ 1 วัน) กรุณาสั่งรีทัชใหม่ก่อน แล้วค่อยขอแทนที่'];
+        }
+        [$labour, $candidates] = $this->find('labour', $query);
+        if (! $labour) {
+            return ['error' => $candidates ? 'พบหลายคน กรุณาระบุเลขพาสปอร์ต' : 'ไม่พบแรงงานตามคำค้น "' . $query . '"', 'candidates' => $candidates];
+        }
+
+        $token = Str::lower(Str::random(8));
+        $record = $this->label('labour', $labour);
+        Cache::put($this->key($user, $token), ['entity' => 'labour_photo', 'labour_id' => $labour->labour_id, 'file' => $file, 'record' => $record, 'user_id' => $user->id], now()->addMinutes(self::TTL_MINUTES));
+        Cache::put($this->key($user, 'latest'), $token, now()->addMinutes(self::TTL_MINUTES));
+
+        return [
+            'ok' => true,
+            'token' => $token,
+            'record' => $record,
+            'current_photo_url' => $labour->photoUrl(),
+            'new_photo_url' => route('ai.image', ['file' => $file]),
+            'note' => 'รูปเดิมไม่ถูกลบ เก็บไว้และบันทึกในประวัติการแก้ไข',
+            'expires_in_minutes' => self::TTL_MINUTES,
+            'next_step' => 'แสดงรูปเดิม (ถ้ามี) และรูปใหม่ แล้วถามให้พิมพ์ "ยืนยัน" ห้ามเรียก apply_update จนกว่าผู้ใช้จะยืนยันในข้อความถัดไป',
+        ];
+    }
+
     public function apply(User $user, ?string $token): array
     {
         $token = trim((string) $token);
@@ -319,6 +353,9 @@ class DataUpdateService
         $payload = $token !== '' ? Cache::get($this->key($user, $token)) : null;
         if (! is_array($payload)) {
             return ['error' => 'ไม่พบรายการแก้ไขที่รอยืนยัน หรือหมดเวลาแล้ว (' . self::TTL_MINUTES . ' นาที) กรุณาเสนอการแก้ไขใหม่ด้วย propose_update'];
+        }
+        if (($payload['entity'] ?? '') === 'labour_photo') {
+            return $this->applyPhoto($user, $token, $payload);
         }
 
         $done = [];
@@ -351,6 +388,29 @@ class DataUpdateService
             'changes' => $done[0]['changes'] ?? [],
             'not_found' => $missing,
             'updated_by' => $user->name . ' (AI)',
+        ];
+    }
+
+    private function applyPhoto(User $user, string $token, array $payload): array
+    {
+        Cache::forget($this->key($user, $token));
+        Cache::forget($this->key($user, 'latest'));
+        $labour = LabourModel::find((int) $payload['labour_id']);
+        $path = 'ai-images/' . $payload['file'];
+        if (! $labour || ! Storage::disk('local')->exists($path)) {
+            return ['error' => ! $labour ? 'ไม่พบแรงงานรายนี้แล้ว' : 'รูปที่รีทัชหมดอายุแล้ว กรุณาสั่งรีทัชใหม่'];
+        }
+        $r = app(LabourPhotoService::class)->replaceKeepingOld($labour, (string) Storage::disk('local')->get($path), $user->name . ' (AI)');
+        Log::info('AI labour photo replaced', ['user' => $user->id, 'labour' => $labour->labour_id, 'new' => $r['path'], 'old' => $r['old']]);
+
+        return [
+            'updated' => true,
+            'entity' => 'labour_photo',
+            'record' => $payload['record'],
+            'changes' => [['field' => 'รูปแรงงาน', 'old' => $r['old'] ? 'รูปเดิม (เก็บไว้ ไม่ได้ลบ)' : '-', 'new' => 'รูปที่รีทัชแล้ว']],
+            'photo_url' => $labour->photoUrl(),
+            'updated_by' => $user->name . ' (AI)',
+            'note' => 'รูปเดิมยังเก็บอยู่ ค่าเดิมดูได้ในประวัติการแก้ไขของแรงงาน (labour_photo)',
         ];
     }
 

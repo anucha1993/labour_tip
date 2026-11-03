@@ -22,7 +22,7 @@ class LabourAssistant
     private const MAX_HISTORY = 20;
 
     /** Tools that change data: offered to MasterAdmin only and re-checked when called. */
-    private const WRITE_TOOLS = ['propose_update', 'apply_update', 'cancel_update'];
+    private const WRITE_TOOLS = ['propose_update', 'propose_photo_update', 'apply_update', 'cancel_update'];
 
     private ?User $actor = null;
 
@@ -113,7 +113,7 @@ class LabourAssistant
     {
         $used = array_unique($toolsUsed);
         $out = [];
-        if (in_array('propose_update', $used, true)) {
+        if (in_array('propose_update', $used, true) || in_array('propose_photo_update', $used, true)) {
             return ['ยืนยัน', 'ยกเลิก'];
         }
         if (in_array('create_presentation', $used, true)) {
@@ -126,7 +126,7 @@ class LabourAssistant
             return ['รวมกับไฟล์พาสปอร์ตเป็นไฟล์เดียว', 'แยกหน้าอื่นออกมาด้วย'];
         }
         if (in_array('retouch_labour_photo', $used, true)) {
-            return ['เปลี่ยนพื้นหลังเป็นสีฟ้า', 'ปรับให้สว่างขึ้นอีกนิด'];
+            return $this->canWrite() ? ['แทนที่รูปเดิมได้เลย', 'เปลี่ยนพื้นหลังเป็นสีฟ้า', 'ปรับให้สว่างขึ้นอีกนิด'] : ['เปลี่ยนพื้นหลังเป็นสีฟ้า', 'ปรับให้สว่างขึ้นอีกนิด'];
         }
         if (in_array('apply_update', $used, true)) {
             $out = ['ขอ Excel รายการที่เพิ่งแก้', 'ดูประวัติการแก้ไขล่าสุด'];
@@ -165,6 +165,7 @@ class LabourAssistant
                 ? $this->updates->proposeByFilter($this->actor, $args['filters'], is_array($args['changes'] ?? null) ? $args['changes'] : [])
                 : $this->updates->propose($this->actor, (string) ($args['entity'] ?? 'labour'), (string) ($args['query'] ?? ''), is_array($args['changes'] ?? null) ? $args['changes'] : [])),
             'apply_update' => $this->updates->apply($this->actor, isset($args['token']) ? (string) $args['token'] : null),
+            'propose_photo_update' => $this->updates->proposePhoto($this->actor, (string) ($args['query'] ?? ''), (string) ($args['image'] ?? '')),
             'cancel_update' => $this->updates->cancel($this->actor, isset($args['token']) ? (string) $args['token'] : null),
             'get_overview' => $this->query->overview(),
             'get_expiry_summary' => $this->query->expirySummary(),
@@ -504,6 +505,14 @@ class LabourAssistant
             $fn('apply_update', 'ขั้นที่ 2: บันทึกการแก้ไขที่เสนอไว้ลงฐานข้อมูลจริง เรียกได้เฉพาะหลังจากผู้ใช้พิมพ์ยืนยันในข้อความถัดไปเท่านั้น (token จาก propose_update ถ้าไม่ระบุจะใช้รายการล่าสุดของผู้ใช้)', [
                 'type' => 'object', 'properties' => ['token' => ['type' => 'string']],
             ]),
+            $fn('propose_photo_update', 'ขั้นที่ 1 ของการเปลี่ยนรูปโปรไฟล์แรงงาน (MasterAdmin): ใช้รูปที่ retouch_labour_photo ทำไว้แทนรูปเดิม ยังไม่บันทึกจริง คืน token ให้ผู้ใช้ยืนยันแล้วเรียก apply_update (รูปเดิมไม่ถูกลบ เก็บไว้และอยู่ในประวัติการแก้ไข)', [
+                'type' => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'เลขพาสปอร์ตหรือชื่อแรงงาน'],
+                    'image' => ['type' => 'string', 'description' => 'image_url จากผลของ retouch_labour_photo ล่าสุด'],
+                ],
+                'required' => ['query', 'image'],
+            ]),
             $fn('cancel_update', 'ยกเลิกการแก้ไขที่เสนอไว้', ['type' => 'object', 'properties' => ['token' => ['type' => 'string']]]),
         ] : [];
 
@@ -675,6 +684,7 @@ class LabourAssistant
 12. ไฟล์แนบที่เป็นตาราง (Excel/CSV): แต่ละแถวคือหนึ่งรายการ ใช้คอลัมน์เลขพาสปอร์ต (หรือชื่อ) เป็น query จับคู่หัวตารางกับฟิลด์ของระบบเอง (เช่น "วีซ่าหมดอายุ" → labour_visa_date_end, "นายจ้าง" → company_id) ถ้ากำกวมให้ถามก่อน แก้หลายแถวให้เรียก propose_update ครั้งเดียวด้วย items แล้วสรุป: แถวที่แก้ได้ ตารางค่าเดิม→ใหม่ และแถวที่แก้ไม่ได้พร้อมเหตุผล ก่อนขอยืนยันครั้งเดียว
 13. คำขอแก้ "ทุกคน/ทั้งหมดของบริษัท X" หรือ "แรงงาน N คนของ X": ใช้ propose_update ด้วย filters (เช่น company + status_job) ไม่ใช่ query ชื่อบริษัท ผลลัพธ์บอกจำนวนที่พบ (matched) ถ้าต่างจากที่ผู้ใช้บอกให้ชี้ให้เห็นก่อนขอยืนยัน เมื่อทุกรายการเปลี่ยนเหมือนกันแสดงตารางการเปลี่ยนครั้งเดียวตามด้วยรายชื่อ (ย่อถ้าเกิน 30 คน)
 14. รีทัชรูป: เรียก retouch_labour_photo (ใส่ instructions ตามที่ผู้ใช้ขอ) แล้วตอบพร้อมรูป ![รูปที่รีทัชแล้ว](image_url) และลิงก์ [ดาวน์โหลดรูป](download_url) บอกว่าใช้รูปต้นฉบับไหน และไฟล์เก็บไว้ 1 วัน ถ้าแรงงานยังไม่มีรูปให้บอกให้อัปโหลดรูปในหน้าข้อมูลแรงงานก่อน รูปสมัครงานต้องเป็นหน้าจริงของคนนั้น ถ้าถูกขอให้เปลี่ยนหน้าตา อายุ สีผิว รูปร่าง หรือทำให้เป็นคนอื่น ให้ปฏิเสธสั้นๆ แล้วเสนอรีทัชแบบปกติแทน
+    ถ้าผู้ใช้ขอให้ "แทนที่รูปเดิม / ใช้รูปนี้เป็นรูปโปรไฟล์ / บันทึกรูปนี้": (MasterAdmin) เรียก propose_photo_update ด้วย query และ image = image_url ของรูปรีทัชล่าสุดในบทสนทนา (ห้ามใช้ propose_update) แล้วแสดง ![รูปเดิม](current_photo_url) ![รูปใหม่](new_photo_url) และให้พิมพ์ "ยืนยัน" จากนั้นจึง apply_update ผู้ใช้ที่ไม่ใช่ MasterAdmin ให้บอกว่าต้องให้ MasterAdmin ทำ หรืออัปโหลดเองในหน้าข้อมูลแรงงาน
 15. กราฟ: กราฟจะแสดงใต้คำตอบเอง ห้ามวาดกราฟด้วยข้อความหรือใส่ลิงก์รูป ให้เขียนบทสรุปสำหรับนำเสนอ: บรรทัดแรกตัวเลขหลัก (จำนวนแรงงานทั้งหมด/ทำงานอยู่) แล้ว 3–5 ข้อสังเกตสำคัญจากตัวเลขของ create_chart (สัดส่วน % กลุ่มใหญ่สุด เอกสารที่ต้องเร่งต่ออายุ) และสิ่งที่นายจ้างควรทำต่อ ตัวเลขทุกตัวต้องมาจากผลของเครื่องมือ บอกด้วยว่ากดปุ่ม "ดาวน์โหลด PNG" ใต้กราฟเพื่อนำไปใส่สไลด์ได้
 17. PowerPoint: ตอบพร้อมลิงก์ [ดาวน์โหลด PowerPoint](download_url) จำนวนสไลด์ และรายการหัวข้อ (outline) สรุปตัวเลขหลักจาก numbers ในคำตอบด้วย บอกว่ากราฟในไฟล์แก้ไขได้ใน PowerPoint และไฟล์เก็บไว้ 1 วัน ถ้าชื่อบริษัทตรงหลายบริษัท ให้แสดง candidates ให้เลือก
 16. แยก/รวม PDF: ตอบพร้อมลิงก์ [เปิดไฟล์](open_url) · [ดาวน์โหลด PDF](download_url) บอกว่าใช้หน้าไหนจากไฟล์ไหน (ช่อง from) และไฟล์เก็บไว้ 1 วัน ถ้าหาหน้าจากผลอ่านเอกสาร ให้บอกด้วยว่าหน้านั้นคืออะไร ถ้าหาไม่เจอหรือไม่แน่ใจ ให้ถามเลขหน้าก่อน ห้ามเดา
