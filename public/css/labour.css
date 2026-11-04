@@ -706,3 +706,21 @@ a:hover { text-decoration: underline; }
 .sh-chip .x:hover { opacity: 1; color: var(--danger); }
 .sh-add { display: inline-flex; gap: 4px; }
 .sh-add input { width: 190px; }
+
+/* ---- คลังเอกสาร: checkbox selection + floating "เลือกแล้ว" bar */
+.dx-folder, .dx-file { position: relative; }
+.dx-check { position: absolute; top: 6px; left: 6px; z-index: 3; margin: 0; padding: 4px; line-height: 0; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.dx-check.static { position: static; opacity: 1; padding: 0; }
+.dx-check input { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--brand-600); }
+.dx-folder:hover .dx-check, .dx-file:hover .dx-check, .dx-folder.selected .dx-check, .dx-file.selected .dx-check, .dx-check:focus-within { opacity: 1; }
+.dx-folder.selected, .dx-file.selected, tr.selected > td { background: var(--brand-50); }
+.dx-folder.selected, .dx-file.selected { border-color: var(--brand-600); }
+.dx-folder.person .dx-check { top: 50%; transform: translateY(-50%); left: 4px; }
+.dx-folder.person.selected .ic, .dx-folder.person:hover .ic { margin-left: 22px; }
+@media (hover: none) { .dx-check { opacity: 1; } .dx-folder.person .ic { margin-left: 22px; } }
+.dx-selbar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 1040; background: var(--surface-1, #fff); color: inherit; border: 1px solid var(--border-1, #e5e7eb); border-radius: 999px; box-shadow: 0 10px 30px rgba(15, 23, 42, .18); padding: 8px 10px 8px 18px; max-width: calc(100vw - 32px); }
+.dx-selbar form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
+.dx-selbar .n { white-space: nowrap; font-size: .92rem; }
+.dx-selbar .actions { display: flex; gap: 6px; }
+.dx-selbar .btn-sm { border-radius: 999px; }
+@media (max-width: 575px) { .dx-selbar { bottom: 10px; border-radius: 16px; padding: 10px 12px; } .dx-selbar .n { font-size: .85rem; } }

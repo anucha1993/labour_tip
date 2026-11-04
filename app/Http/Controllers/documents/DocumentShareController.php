@@ -9,6 +9,7 @@ use App\Models\company\CompanyModel;
 use App\Models\DocumentShare;
 use App\Models\labour\LabourDocument;
 use App\Models\labour\LabourModel;
+use App\Services\DocumentZipService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -189,6 +190,10 @@ class DocumentShareController extends Controller
         $counts = LabourDocument::tableReady()
             ? LabourDocument::whereIn('labour_id', $labours->pluck('labour_id'))->select('labour_id', DB::raw('COUNT(*) AS c'))->groupBy('labour_id')->pluck('c', 'labour_id')
             : collect();
+        $bytes = LabourDocument::tableReady()
+            ? LabourDocument::whereIn('labour_id', $labours->pluck('labour_id'))->select('labour_id', DB::raw('COALESCE(SUM(size), 0) AS b'))->groupBy('labour_id')->pluck('b', 'labour_id')
+            : collect();
+        $bytesOf = fn (LabourModel $l) => (int) ($bytes[$l->labour_id] ?? 0);
         $countOf = fn (LabourModel $l) => LabourDocument::tableReady() ? (int) ($counts[$l->labour_id] ?? 0) : $l->documentList()->count();
         $total = $labours->sum($countOf);
 
@@ -204,6 +209,9 @@ class DocumentShareController extends Controller
         return view('documents.share-public', [
             'share' => $share,
             'labours' => $labours,
+            'bytesOf' => $bytesOf,
+            'zipMaxFiles' => DocumentZipService::maxFiles(),
+            'zipMaxBytes' => DocumentZipService::maxBytes(),
             'countOf' => $countOf,
             'total' => $total,
             'current' => $current,
@@ -312,6 +320,33 @@ class DocumentShareController extends Controller
     }
 
     /** Files that still live only in a legacy labour_file_* column. */
+    /** Recipient downloads a selection of the shared folder as one streamed zip (links that allow download only). */
+    public function zip(Request $request, string $token, DocumentZipService $zipper)
+    {
+        $share = $this->guardFile($request, $token);
+        abort_unless($share->can_download, 403, 'ลิงก์นี้ดูได้อย่างเดียว ดาวน์โหลดไม่ได้');
+
+        $data = $request->validate([
+            'labours' => ['nullable', 'array', 'max:' . DocumentZipService::maxFiles()],
+            'labours.*' => ['integer'],
+            'documents' => ['nullable', 'array', 'max:' . DocumentZipService::maxFiles()],
+            'documents.*' => ['integer'],
+        ]);
+        // Only what this link covers; anything else in the request is silently dropped.
+        $labours = ! empty($data['labours']) ? LabourModel::with('company')->whereIn('labour_id', $data['labours'])->get()->filter(fn ($l) => $share->coversLabour($l))->values() : collect();
+        $documents = ! empty($data['documents']) && LabourDocument::tableReady()
+            ? LabourDocument::with('labour.company')->whereIn('id', $data['documents'])->get()->filter(fn ($d) => $share->covers($d))->values()
+            : collect();
+
+        try {
+            $entries = $zipper->entries($labours, $documents);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('warning', $e->getMessage());
+        }
+
+        return $zipper->stream($entries, DocumentZipService::nameFor($labours, $documents, $share->title()));
+    }
+
     public function legacy(Request $request, string $token, LabourModel $labourModel, string $column)
     {
         $share = $this->guardFile($request, $token);

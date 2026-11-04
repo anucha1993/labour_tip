@@ -195,7 +195,7 @@ class DocumentExplorerTest extends TestCase
         $this->assertStringContainsString('application/zip', $zipRes->headers->get('content-type'));
         $this->assertStringContainsString('MA000001 AUNG KO.zip', $zipRes->headers->get('content-disposition'));
         $tmp = tempnam(sys_get_temp_dir(), 'zt');
-        file_put_contents($tmp, $zipRes->getFile()->getContent());
+        file_put_contents($tmp, $zipRes->streamedContent()); // the zip is streamed, never written to disk
         $zip = new \ZipArchive;
         $this->assertTrue($zip->open($tmp));
         $this->assertSame(2, $zip->numFiles);
@@ -210,6 +210,73 @@ class DocumentExplorerTest extends TestCase
         $this->actingAs($this->user('MasterAdmin'))->delete(route('labour.document.delete', $doc->id))->assertSessionHas('success');
         $this->assertSame(1, LabourDocument::count());
         Storage::disk('public')->assertMissing($doc->path);
+    }
+
+    public function test_a_selection_of_folders_and_files_streams_as_one_zip_within_limits()
+    {
+        $a = $this->labour('AUNG KO', 'MA000001');
+        $b = $this->labour('ZAW ZAW', 'MA000009');
+        $c = $this->labour('MYO MIN', 'MB000002', 2);
+        $a1 = $this->doc($a, 'Passport');
+        $a2 = $this->doc($a, 'Visa', 'visa.pdf');
+        $b1 = $this->doc($b, 'Passport');
+        $c1 = $this->doc($c, 'Passport');
+
+        // Company page: every worker tile with files carries a checkbox with its size; the bar posts to the zip route.
+        $this->actingAs($this->user('Member'))->get('/documents?company=1')->assertOk()
+            ->assertSee('data-kind="labour" value="' . $a->labour_id . '" data-files="2" data-bytes="' . ($a1->size + $a2->size) . '"', false)
+            ->assertSee('id="dxSelBar"', false)->assertSee(route('documents.zip.selected'));
+        $this->actingAs($this->user('Member'))->get('/documents?labour=' . $a->labour_id)->assertOk()
+            ->assertSee('data-kind="document" value="' . $a1->id . '" data-files="1" data-bytes="' . $a1->size . '"', false);
+
+        // Folder A + single file of B (+ C's file, outside company 1 but still allowed for staff): one zip, a folder per worker.
+        $res = $this->actingAs($this->user('Member'))->post(route('documents.zip.selected'), ['labours' => [$a->labour_id], 'documents' => [$b1->id, $c1->id, $a1->id]]);
+        $res->assertOk();
+        $this->assertStringContainsString('application/zip', $res->headers->get('content-type'));
+        $this->assertSame(['MA000001 AUNG KO/Passport - MA000001.pdf', 'MA000001 AUNG KO/Visa - MA000001.pdf', 'MA000009 ZAW ZAW/Passport - MA000009.pdf', 'MB000002 MYO MIN/Passport - MB000002.pdf'], $this->zipEntries($res));
+
+        // One worker only: flat names and the worker's name as the zip name (same as the old per-worker zip).
+        $res = $this->actingAs($this->user('Member'))->post(route('documents.zip.selected'), ['documents' => [$a1->id, $a2->id]]);
+        $res->assertOk();
+        $this->assertStringContainsString('MA000001 AUNG KO.zip', $res->headers->get('content-disposition'));
+        $this->assertSame(['Passport - MA000001.pdf', 'Visa - MA000001.pdf'], $this->zipEntries($res));
+
+        // Limits: too many files / too many bytes go back with a warning; nothing selected too.
+        config(['documents.zip_max_files' => 2]);
+        $this->actingAs($this->user('Member'))->from('/documents?company=1')->post(route('documents.zip.selected'), ['labours' => [$a->labour_id, $b->labour_id]])
+            ->assertRedirect('/documents?company=1')->assertSessionHas('warning', fn ($m) => str_contains($m, 'ไม่เกิน 2 ไฟล์'));
+        config(['documents.zip_max_files' => 500, 'documents.zip_max_mb' => 1]);
+        LabourDocument::whereKey($a1->id)->update(['size' => 2 * 1024 * 1024]);
+        $this->actingAs($this->user('Member'))->from('/documents?labour=' . $a->labour_id)->post(route('documents.zip.selected'), ['documents' => [$a1->id]])
+            ->assertRedirect('/documents?labour=' . $a->labour_id)->assertSessionHas('warning', fn ($m) => str_contains($m, 'ขนาดรวมเกิน 1 MB'));
+        config(['documents.zip_max_mb' => 1024]);
+        $this->actingAs($this->user('Member'))->from('/documents')->post(route('documents.zip.selected'), ['documents' => [999999]])->assertRedirect('/documents')->assertSessionHas('warning');
+
+        // Concurrency: with every slot taken the request is refused with 429 instead of queueing.
+        config(['documents.zip_concurrent' => 1]);
+        $lock = \Illuminate\Support\Facades\Cache::lock(\App\Services\DocumentZipService::SLOT_PREFIX . '1', 60);
+        $this->assertTrue($lock->get());
+        $this->actingAs($this->user('Member'))->post(route('documents.zip.selected'), ['documents' => [$a1->id]])->assertStatus(429);
+        $lock->release();
+        $this->actingAs($this->user('Member'))->post(route('documents.zip.selected'), ['documents' => [$a1->id]])->assertOk()->streamedContent(); // the slot is held until the stream has been sent
+        $this->assertTrue(\Illuminate\Support\Facades\Cache::lock(\App\Services\DocumentZipService::SLOT_PREFIX . '1', 60)->get(), 'the slot is released after streaming');
+    }
+
+    /** Entry names of a streamed zip response, in order. */
+    private function zipEntries($res): array
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'zt');
+        file_put_contents($tmp, $res->streamedContent());
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($tmp), 'streamed zip is readable');
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+        @unlink($tmp);
+
+        return $names;
     }
 
     public function test_labour_form_upload_still_works_through_shared_service()

@@ -64,6 +64,13 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
 - การอัปโหลดจากฟอร์มแรงงานและจากคลังเอกสารใช้ `App\Services\LabourDocumentService` ตัวเดียวกัน ไฟล์ไปที่ disk ตาม `LABOUR_DOCS_DISK`
 - โค้ด: `app/Http/Controllers/documents/DocumentExplorerController.php`, `resources/views/documents/`, CSS ส่วน `.dx-*` ใน `public/css/labour.css`; เทสต์ `tests/Feature/DocumentExplorerTest.php`
 
+## ดาวน์โหลดเป็น zip (เลือกหลายรายการ)
+
+- ติ๊ก checkbox ที่การ์ด/แถวของโฟลเดอร์แรงงาน (หน้าบริษัท) หรือไฟล์ (หน้าแรงงาน) แถบลอย "เลือกแล้ว n รายการ · x ไฟล์ · ~ขนาด" จะโผล่ด้านล่าง กด "ดาวน์โหลด zip" (`POST /documents/zip` → `DocumentExplorerController::zipSelected`, partial `documents/_select-bar.blade.php`) ใช้ได้ทั้ง Admin และหน้าผู้รับแชร์ที่อนุญาตดาวน์โหลด (`POST /share/{token}/zip`, กรองให้เหลือเฉพาะที่ลิงก์ครอบคลุม)
+- `App\Services\DocumentZipService` สตรีม zip ด้วย ZipStream-PHP (`maennchen/zipstream-php` ^2.2 อยู่ใน composer.json แล้ว) อ่านไฟล์จาก R2/local เป็น stream เขียนออก response ทันที ไม่เขียน temp ไม่โหลดทั้งไฟล์เข้าหน่วยความจำ (วัดจริง 40 ไฟล์ 52 MB: peak memory 44 MB รวม framework) เก็บแบบ STORE ไม่บีบอัด (PDF/JPG บีบไม่ลง) หลายคน → โฟลเดอร์ย่อยต่อคน `"<passport ชื่อ>/<ชื่อเอกสาร - passport>.ext"` คนเดียว → ชื่อแบน; zip รายคนเดิม (`GET /documents/zip/{labour}`) ใช้ service เดียวกัน
+- เพดานใน `config/documents.php` (env `DOCS_ZIP_MAX_FILES`=500, `DOCS_ZIP_MAX_MB`=1024, `DOCS_ZIP_CONCURRENT`=2): เกิน → กลับหน้าเดิมพร้อม warning (JS เตือนก่อนกดด้วย); slot พร้อมกันใช้ `Cache::lock('docs-zip-slot-N', 900s)` เต็มทุก slot → 429
+- ข้อสังเกตจากการวัดบนเครื่อง dev: R2 มี latency ~0.9 วินาทีต่อไฟล์ (bandwidth ~5 MB/s) เวลาจึงขึ้นกับจำนวนไฟล์มากกว่าขนาด บน server จริงควรเร็วกว่า
+
 ## แชร์โฟลเดอร์เอกสาร (ลิงก์สาธารณะแบบ Google Drive)
 
 Admin/MasterAdmin กด **แชร์โฟลเดอร์** ในคลังเอกสาร (โฟลเดอร์บริษัทหรือแรงงาน) เพื่อสร้างลิงก์ `/share/{token}` ให้คนนอกเปิดดูไฟล์โดยไม่ต้อง login

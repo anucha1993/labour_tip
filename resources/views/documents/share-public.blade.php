@@ -64,21 +64,24 @@
             <div class="dx-grid folders" id="shFolders">
                 @foreach ($labours as $l)
                     @php $n = $countOf($l); @endphp
-                    <a href="{{ $rootUrl }}?labour={{ $l->labour_id }}" class="dx-folder person {{ $n === 0 ? 'muted' : '' }}" data-name="{{ mb_strtolower($l->labour_fullname . ' ' . $l->labour_passport_number) }}">
+                    <div class="dx-folder person {{ $n === 0 ? 'muted' : '' }}" data-name="{{ mb_strtolower($l->labour_fullname . ' ' . $l->labour_passport_number) }}">
+                        <a href="{{ $rootUrl }}?labour={{ $l->labour_id }}" class="stretched-link" aria-label="เปิด {{ $l->labour_fullname }}"></a>
+                        @if ($share->can_download && $n > 0)<label class="dx-check" title="เลือกโฟลเดอร์นี้"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $l->labour_id }}" data-files="{{ $n }}" data-bytes="{{ $bytesOf($l) }}" aria-label="เลือก {{ $l->labour_fullname }}"></label>@endif
                         <span class="ic"><i class="mdi mdi-folder"></i></span>
                         <span class="body">
                             <span class="t d-block" title="{{ $l->labour_fullname }}">{{ $l->labour_fullname }}</span>
                             <span class="m d-block">{{ $l->labour_passport_number ?: '-' }} · {{ $n }} ไฟล์</span>
                         </span>
-                    </a>
+                    </div>
                 @endforeach
             </div>
             <div class="dx-list d-none" id="shFoldersList">
                 <div class="card"><div class="table-wrap"><table class="table table-modern">
-                    <thead><tr><th>ชื่อ</th><th>พาสปอร์ต</th><th class="text-end">ไฟล์</th><th></th></tr></thead>
+                    <thead><tr>@if ($share->can_download)<th style="width:36px"></th>@endif<th>ชื่อ</th><th>พาสปอร์ต</th><th class="text-end">ไฟล์</th><th></th></tr></thead>
                     <tbody>
                     @foreach ($labours as $l)
                         <tr data-name="{{ mb_strtolower($l->labour_fullname . ' ' . $l->labour_passport_number) }}">
+                            @if ($share->can_download)<td>@if ($countOf($l) > 0)<label class="dx-check static"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $l->labour_id }}" data-files="{{ $countOf($l) }}" data-bytes="{{ $bytesOf($l) }}" aria-label="เลือก {{ $l->labour_fullname }}"></label>@endif</td>@endif
                             <td class="fw-name"><a href="{{ $rootUrl }}?labour={{ $l->labour_id }}" class="text-reset"><i class="mdi mdi-folder text-warning"></i> {{ $l->labour_fullname }}</a></td>
                             <td class="text-mono">{{ $l->labour_passport_number ?: '-' }}</td>
                             <td class="text-end">{{ $countOf($l) }}</td>
@@ -99,6 +102,7 @@
                 @foreach ($documents as $doc)
                     @php $a = $fileAttrs($doc, $current); @endphp
                     <div class="dx-file" {!! $attrString($a) !!} role="button" tabindex="0" title="{{ $a['data-file'] }}">
+                        @if ($share->can_download && $doc->exists)<label class="dx-check" title="เลือกไฟล์นี้"><input type="checkbox" class="dx-sel" data-kind="document" value="{{ $doc->id }}" data-files="1" data-bytes="{{ (int) $doc->size }}" aria-label="เลือก {{ $doc->name }}"></label>@endif
                         <div class="thumb">
                             @if ($doc->isImage())<img src="{{ $a['data-url'] }}" alt="" loading="lazy">@else<i class="mdi {{ $doc->icon() }}"></i>@endif
                             <span class="ext">{{ $doc->extension() ?: 'file' }}</span>
@@ -112,11 +116,12 @@
             </div>
             <div class="dx-list" id="shFilesList">
                 <div class="card"><div class="table-wrap"><table class="table table-modern">
-                    <thead><tr><th style="width:40px"></th><th>ชื่อเอกสาร</th><th class="d-none d-md-table-cell">ไฟล์</th><th class="d-none d-sm-table-cell">ขนาด</th><th class="d-none d-lg-table-cell">อัปโหลดเมื่อ</th><th></th></tr></thead>
+                    <thead><tr>@if ($share->can_download)<th style="width:36px"></th>@endif<th style="width:40px"></th><th>ชื่อเอกสาร</th><th class="d-none d-md-table-cell">ไฟล์</th><th class="d-none d-sm-table-cell">ขนาด</th><th class="d-none d-lg-table-cell">อัปโหลดเมื่อ</th><th></th></tr></thead>
                     <tbody>
                     @foreach ($documents as $doc)
                         @php $a = $fileAttrs($doc, $current); @endphp
                         <tr class="dx-file-row" {!! $attrString($a) !!}>
+                            @if ($share->can_download)<td>@if ($doc->exists)<label class="dx-check static"><input type="checkbox" class="dx-sel" data-kind="document" value="{{ $doc->id }}" data-files="1" data-bytes="{{ (int) $doc->size }}" aria-label="เลือก {{ $doc->name }}"></label>@endif</td>@endif
                             <td><i class="mdi {{ $doc->icon() }} fs-5 {{ $doc->isImage() ? 'text-info' : 'text-danger' }}"></i></td>
                             <td class="fw-name">{{ $doc->name }}</td>
                             <td class="d-none d-md-table-cell text-2 text-truncate" style="max-width:260px">{{ $a['data-file'] }}</td>
@@ -158,6 +163,10 @@
         </div>
     </aside>
     </div>
+
+    @if ($share->can_download)
+        @include('documents._select-bar', ['action' => route('share.zip', $share->token), 'maxFiles' => $zipMaxFiles, 'maxBytes' => $zipMaxBytes])
+    @endif
 @endsection
 
 @push('scripts')

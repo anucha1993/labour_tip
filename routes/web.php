@@ -49,6 +49,7 @@ Route::prefix('share')->middleware('throttle:120,1')->group(function () {
     Route::get('/{token}/open', [DocumentShareController::class, 'open'])->name('share.open');
     Route::post('/{token}/unlock', [DocumentShareController::class, 'unlock'])->name('share.unlock')->middleware('throttle:10,1,unlock');
     Route::get('/{token}/file/{document}', [DocumentShareController::class, 'file'])->name('share.file');
+    Route::post('/{token}/zip', [DocumentShareController::class, 'zip'])->name('share.zip');
     Route::get('/{token}/legacy/{labourModel}/{column}', [DocumentShareController::class, 'legacy'])->name('share.legacy');
 });
 
@@ -75,6 +76,7 @@ Route::middleware('auth')->group(function () {
     // ---------------------------------------------------------------- Document explorer (read)
     Route::get('/documents', [DocumentExplorerController::class, 'index'])->name('documents.index');
     Route::get('/documents/zip/{labourModel}', [DocumentExplorerController::class, 'zip'])->name('documents.zip');
+    Route::post('/documents/zip', [DocumentExplorerController::class, 'zipSelected'])->name('documents.zip.selected');
 
     // ---------------------------------------------------------------- Company (read)
     Route::get('/company', [CompanyController::class, 'index'])->name('company.index');

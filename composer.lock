@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f245c4d14384bb05ee3f12805d4b3cb2",
+    "content-hash": "4070f7c7018c4e321b53a59d0a83c226",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -403,7 +403,7 @@
             "version": "1.9.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/codedge/laravel-fpdf.git",
+                "url": "https://codeberg.org/codedge/laravel-fpdf",
                 "reference": "11520c0fa31d285ac0d391b4ae619aa9e3dc3355"
             },
             "dist": {
@@ -6971,12 +6971,12 @@
             "version": "v5.6.1",
             "source": {
                 "type": "git",
-                "url": "https://github.com/vlucas/phpdotenv.git",
+                "url": "https://github.com/phpdotenv/phpdotenv.git",
                 "reference": "a59a13791077fe3d44f90e7133eb68e7d22eaff2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/vlucas/phpdotenv/zipball/a59a13791077fe3d44f90e7133eb68e7d22eaff2",
+                "url": "https://api.github.com/repos/phpdotenv/phpdotenv/zipball/a59a13791077fe3d44f90e7133eb68e7d22eaff2",
                 "reference": "a59a13791077fe3d44f90e7133eb68e7d22eaff2",
                 "shasum": ""
             },

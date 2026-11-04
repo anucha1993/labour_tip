@@ -369,6 +369,55 @@ class DocumentShareTest extends TestCase
         \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\ShareAccessCode::class, fn ($m) => $m->email === 'hr@company.com' && str_contains(view('emails.share-code', ['share' => $m->share, 'code' => $m->code, 'email' => $m->email])->render(), '/open?'));
     }
 
+    public function test_recipients_can_zip_a_selection_only_inside_the_shared_folder_and_only_when_download_is_allowed()
+    {
+        $a = $this->labour('AUNG KO', 'MA000001', 1);
+        $b = $this->labour('ZAW ZAW', 'MA000009', 1);
+        $other = $this->labour('MYO MIN', 'MB000002', 2);
+        $a1 = $this->doc($a, 'Passport');
+        $b1 = $this->doc($b, 'Visa', 'visa.pdf');
+        $o1 = $this->doc($other, 'Passport');
+        $share = DocumentShare::create(['token' => DocumentShare::newToken(), 'kind' => 'company', 'target_id' => 1, 'can_download' => true]);
+
+        // The page offers the selection bar and per-folder checkboxes with sizes.
+        $this->get($share->url())->assertOk()->assertSee('id="dxSelBar"', false)->assertSee(route('share.zip', $share->token))
+            ->assertSee('data-kind="labour" value="' . $a->labour_id . '" data-files="1" data-bytes="' . $a1->size . '"', false);
+        $this->get($share->url() . '?labour=' . $a->labour_id)->assertOk()->assertSee('data-kind="document" value="' . $a1->id . '"', false);
+
+        // Anything outside the link (worker of another company, file of another company) is dropped silently.
+        $res = $this->post(route('share.zip', $share->token), ['labours' => [$a->labour_id, $other->labour_id], 'documents' => [$b1->id, $o1->id]]);
+        $res->assertOk();
+        $this->assertStringContainsString('application/zip', $res->headers->get('content-type'));
+        $tmp = tempnam(sys_get_temp_dir(), 'zt');
+        file_put_contents($tmp, $res->streamedContent());
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($tmp));
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+        @unlink($tmp);
+        $this->assertSame(['MA000001 AUNG KO/Passport - MA000001.pdf', 'MA000009 ZAW ZAW/Visa - MA000009.pdf'], $names);
+
+        // Only foreign items selected -> nothing to zip -> warning, no download.
+        $this->from($share->url())->post(route('share.zip', $share->token), ['labours' => [$other->labour_id]])->assertRedirect($share->url())->assertSessionHas('warning');
+
+        // View-only link: no checkboxes, zip refused. Revoked link: gone.
+        $share->update(['can_download' => false]);
+        $this->get($share->url())->assertOk()->assertDontSee('id="dxSelBar"', false)->assertDontSee('class="dx-sel"', false);
+        $this->post(route('share.zip', $share->token), ['labours' => [$a->labour_id]])->assertForbidden();
+        $share->update(['can_download' => true, 'revoked_at' => now()]);
+        $this->post(route('share.zip', $share->token), ['labours' => [$a->labour_id]])->assertStatus(410);
+
+        // Restricted link that is still locked: 403 until the recipient identifies.
+        $locked = DocumentShare::create(['token' => DocumentShare::newToken(), 'kind' => 'labour', 'target_id' => $a->labour_id, 'can_download' => true, 'access' => 'email', 'recipient_email' => 'hr@company.com']);
+        $this->post(route('share.zip', $locked->token), ['documents' => [$a1->id]])->assertForbidden();
+        config(['mail.default' => 'log']);
+        $this->post(route('share.unlock', $locked->token), ['email' => 'hr@company.com'])->assertRedirect($locked->url());
+        $this->post(route('share.zip', $locked->token), ['documents' => [$a1->id]])->assertOk();
+    }
+
     public function test_validation_and_missing_target()
     {
         $this->actingAs($this->user('Admin'))->from('/documents')->post('/documents/share', ['kind' => 'labour', 'target_id' => 1, 'expires_days' => 7, 'password' => 'ab'])

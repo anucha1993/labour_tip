@@ -214,6 +214,7 @@
                     @php $ws = $sharesByLabour[$wk->labour_id] ?? collect(); $we = $emailLine($ws); @endphp
                     <div class="dx-folder person {{ $n === 0 ? 'muted' : '' }} {{ $ws->isNotEmpty() ? 'shared' : '' }}">
                         <a href="{{ route('documents.index', ['labour' => $wk->labour_id]) }}" class="stretched-link" aria-label="เปิด {{ $wk->labour_fullname }}"></a>
+                        @if ($n > 0)<label class="dx-check" title="เลือกโฟลเดอร์นี้"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $wk->labour_id }}" data-files="{{ $n }}" data-bytes="{{ (int) ($wk->documents_sum_size ?? 0) }}" aria-label="เลือก {{ $wk->labour_fullname }}"></label>@endif
                         <span class="ic">@if ($wk->hasPhoto())<img src="{{ $wk->photoUrl() }}" alt="" loading="lazy">@else<i class="mdi mdi-account"></i>@endif</span>
                         <span class="body">
                             <span class="t d-block" title="{{ $wk->labour_fullname }}">{{ $wk->labour_fullname }}</span>
@@ -234,11 +235,12 @@
             </div>
             <div class="dx-list d-none" id="dxWorkersList">
                 <div class="card"><div class="table-wrap"><table class="table table-modern">
-                    <thead><tr><th>ชื่อ</th><th>พาสปอร์ต</th><th>สถานะ</th><th class="text-end">ไฟล์</th><th></th></tr></thead>
+                    <thead><tr><th style="width:36px"></th><th>ชื่อ</th><th>พาสปอร์ต</th><th>สถานะ</th><th class="text-end">ไฟล์</th><th></th></tr></thead>
                     <tbody>
                     @foreach ($workers as $wk)
                         @php $n = $tableReady ? (int) $wk->documents_count : $wk->documentList()->count(); @endphp
                         <tr>
+                            <td>@if ($n > 0)<label class="dx-check static"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $wk->labour_id }}" data-files="{{ $n }}" data-bytes="{{ (int) ($wk->documents_sum_size ?? 0) }}" aria-label="เลือก {{ $wk->labour_fullname }}"></label>@endif</td>
                             <td class="fw-name"><a href="{{ route('documents.index', ['labour' => $wk->labour_id]) }}" class="text-reset"><i class="mdi mdi-folder text-warning"></i> {{ $wk->labour_fullname }}</a></td>
                             <td class="text-mono">{{ $wk->labour_passport_number ?: '-' }}</td>
                             <td><x-status-badge :value="$wk->labour_status_job" /></td>
@@ -307,16 +309,17 @@
         @else
             <div class="dx-grid" id="dxFiles">
                 @foreach ($documents as $doc)
-                    @include('documents._file-card', ['doc' => $doc, 'attrs' => $fileAttrs($doc, $labour), 'showLabour' => false])
+                    @include('documents._file-card', ['doc' => $doc, 'attrs' => $fileAttrs($doc, $labour), 'showLabour' => false, 'selectable' => true])
                 @endforeach
             </div>
             <div class="dx-list d-none" id="dxFilesList">
                 <div class="card"><div class="table-wrap"><table class="table table-modern">
-                    <thead><tr><th style="width:40px"></th><th>ชื่อเอกสาร</th><th>ไฟล์</th><th class="d-none d-md-table-cell">ขนาด</th><th class="d-none d-lg-table-cell">อัปโหลดเมื่อ</th><th></th></tr></thead>
+                    <thead><tr><th style="width:36px"></th><th style="width:40px"></th><th>ชื่อเอกสาร</th><th>ไฟล์</th><th class="d-none d-md-table-cell">ขนาด</th><th class="d-none d-lg-table-cell">อัปโหลดเมื่อ</th><th></th></tr></thead>
                     <tbody>
                     @foreach ($documents as $doc)
                         @php $a = $fileAttrs($doc, $labour); @endphp
                         <tr class="dx-file-row" {!! $attrString($a) !!}>
+                            <td>@if ($doc->exists)<label class="dx-check static"><input type="checkbox" class="dx-sel" data-kind="document" value="{{ $doc->id }}" data-files="1" data-bytes="{{ (int) $doc->size }}" aria-label="เลือก {{ $doc->name }}"></label>@endif</td>
                             <td><i class="mdi {{ $doc->icon() }} fs-5 {{ $doc->isImage() ? 'text-info' : 'text-danger' }}"></i></td>
                             <td class="fw-name">{{ $doc->name }}</td>
                             <td class="text-truncate" style="max-width:260px">{{ $a['data-file'] }}</td>
@@ -422,6 +425,10 @@
                 </form>
             </div>
         </div>
+    @endif
+
+    @if (in_array($mode, ['company', 'worker'], true))
+        @include('documents._select-bar', ['action' => route('documents.zip.selected'), 'maxFiles' => $zipMaxFiles, 'maxBytes' => $zipMaxBytes])
     @endif
 @endsection
 

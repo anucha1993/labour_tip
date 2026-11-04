@@ -7,6 +7,7 @@ use App\Models\company\CompanyModel;
 use App\Models\DocumentShare;
 use App\Models\labour\LabourDocument;
 use App\Models\labour\LabourModel;
+use App\Services\DocumentZipService;
 use App\Services\LabourDocumentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +46,8 @@ class DocumentExplorerController extends Controller
             'canEdit' => user_is('Admin', 'MasterAdmin'),
             'canDelete' => user_is('MasterAdmin'),
             'tableReady' => LabourDocument::tableReady(),
+            'zipMaxFiles' => DocumentZipService::maxFiles(),
+            'zipMaxBytes' => DocumentZipService::maxBytes(),
             'canShare' => user_is('Admin', 'MasterAdmin') && DocumentShare::tableReady(),
         ];
 
@@ -157,7 +160,7 @@ class DocumentExplorerController extends Controller
         }
 
         if ($base['tableReady']) {
-            $query->withCount('documents');
+            $query->withCount('documents')->withSum('documents', 'size');
         }
 
         $workers = $query
@@ -278,36 +281,42 @@ class DocumentExplorerController extends Controller
             ->with('success', 'เปลี่ยนชื่อเอกสารเป็น "' . $document->name . '" แล้ว');
     }
 
-    /** Download every file of one worker as a single zip. */
-    public function zip(LabourModel $labourModel)
+    /** Download every file of one worker as a single (streamed) zip. */
+    public function zip(LabourModel $labourModel, DocumentZipService $zipper)
     {
-        abort_unless(class_exists(\ZipArchive::class), 404, 'เซิร์ฟเวอร์ไม่รองรับการสร้างไฟล์ zip');
-
-        $documents = $labourModel->documentList();
-        abort_if($documents->isEmpty(), 404, 'แรงงานคนนี้ยังไม่มีไฟล์เอกสาร');
-
-        $tmp = tempnam(sys_get_temp_dir(), 'docs');
-        $zip = new \ZipArchive;
-        $zip->open($tmp, \ZipArchive::OVERWRITE);
-
-        $used = [];
-        foreach ($documents as $doc) {
-            if (! $doc->exists()) {
-                continue;
-            }
-            $entry = $doc->downloadName();
-            $n = 1;
-            while (isset($used[$entry])) {
-                $entry = pathinfo($doc->downloadName(), PATHINFO_FILENAME) . ' (' . (++$n) . ').' . $doc->extension();
-            }
-            $used[$entry] = true;
-            $zip->addFromString($entry, $doc->storage()->get($doc->path));
+        try {
+            $entries = $zipper->entries(collect([$labourModel]), collect());
+        } catch (\InvalidArgumentException $e) {
+            abort(404, 'แรงงานคนนี้ยังไม่มีไฟล์เอกสาร');
         }
-        $zip->close();
 
-        $name = preg_replace('/[\\\\\/:*?"<>|]+/u', '-', trim(($labourModel->labour_passport_number ?: 'labour') . ' ' . $labourModel->labour_fullname)) . '.zip';
+        return $zipper->stream($entries, DocumentZipService::nameFor(collect([$labourModel]), collect()));
+    }
 
-        return response()->download($tmp, $name, ['Content-Type' => 'application/zip'])->deleteFileAfterSend(true);
+    /**
+     * Download a selection (worker folders and/or single files, from the checkboxes) as one streamed zip.
+     * Too big a selection comes back to the page with a warning instead of starting the download.
+     */
+    public function zipSelected(Request $request, DocumentZipService $zipper)
+    {
+        $data = $request->validate([
+            'labours' => ['nullable', 'array', 'max:' . DocumentZipService::maxFiles()],
+            'labours.*' => ['integer'],
+            'documents' => ['nullable', 'array', 'max:' . DocumentZipService::maxFiles()],
+            'documents.*' => ['integer'],
+        ]);
+        $labours = ! empty($data['labours']) ? LabourModel::with('company')->whereIn('labour_id', $data['labours'])->get() : collect();
+        $documents = ! empty($data['documents']) && LabourDocument::tableReady()
+            ? LabourDocument::with('labour.company')->whereIn('id', $data['documents'])->get()
+            : collect();
+
+        try {
+            $entries = $zipper->entries($labours, $documents);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('warning', $e->getMessage());
+        }
+
+        return $zipper->stream($entries, DocumentZipService::nameFor($labours, $documents));
     }
 
     // ------------------------------------------------------------------ helpers
