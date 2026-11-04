@@ -7,6 +7,8 @@ use App\Http\Controllers\ai\AiChatLogController;
 use App\Http\Controllers\api\PortalController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\company\CompanyController;
+use App\Http\Controllers\documents\DocumentExplorerController;
+use App\Http\Controllers\documents\DocumentShareController;
 use App\Http\Controllers\ExportExcelExpire\LabourExpireDay90Controller;
 use App\Http\Controllers\ExportExcelExpire\LabourExpirePassportController;
 use App\Http\Controllers\ExportExcelExpire\LabourExpireVisaController;
@@ -41,6 +43,15 @@ Auth::routes(['register' => false, 'verify' => false]);
 // Worker portal downloads: temporary signed URLs issued by the portal API (no login, valid 15 minutes).
 Route::get('/portal-file/{labourModel}/{key}', [PortalController::class, 'file'])->middleware('signed')->name('portal.file');
 
+// Shared document folders (no login; the token is the key). Rate-limited per IP.
+Route::prefix('share')->middleware('throttle:120,1')->group(function () {
+    Route::get('/{token}', [DocumentShareController::class, 'show'])->name('share.show');
+    Route::get('/{token}/open', [DocumentShareController::class, 'open'])->name('share.open');
+    Route::post('/{token}/unlock', [DocumentShareController::class, 'unlock'])->name('share.unlock')->middleware('throttle:10,1,unlock');
+    Route::get('/{token}/file/{document}', [DocumentShareController::class, 'file'])->name('share.file');
+    Route::get('/{token}/legacy/{labourModel}/{column}', [DocumentShareController::class, 'legacy'])->name('share.legacy');
+});
+
 Route::middleware('auth')->group(function () {
 
     // ---------------------------------------------------------------- Dashboard
@@ -60,6 +71,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/labour/{labourModel}/photo', [LabourController::class, 'photo'])->name('labour.photo');
     Route::get('/labour/document/{document}/open', [LabourDocumentController::class, 'open'])->name('labour.document.open');
     Route::get('/labour/{labourModel}/legacy-file/{column}', [LabourDocumentController::class, 'openLegacy'])->name('labour.document.openLegacy');
+
+    // ---------------------------------------------------------------- Document explorer (read)
+    Route::get('/documents', [DocumentExplorerController::class, 'index'])->name('documents.index');
+    Route::get('/documents/zip/{labourModel}', [DocumentExplorerController::class, 'zip'])->name('documents.zip');
 
     // ---------------------------------------------------------------- Company (read)
     Route::get('/company', [CompanyController::class, 'index'])->name('company.index');
@@ -100,6 +115,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/labour/form-edit/{labourModel}', [LabourController::class, 'edit'])->name('labour.edit');
         Route::put('/labour/update/{labourModel}', [LabourController::class, 'update'])->name('labour.update');
         Route::post('/labour/massupdate', [labourMassUpdateController::class, 'massupdate'])->name('labour.massupdate');
+
+        // Document explorer write
+        Route::get('/documents/shares', [DocumentShareController::class, 'index'])->name('documents.shares');
+        Route::post('/documents/share', [DocumentShareController::class, 'store'])->name('documents.share.store');
+        Route::patch('/documents/share/{share}', [DocumentShareController::class, 'update'])->name('documents.share.update');
+        Route::post('/documents/share/{share}/notify', [DocumentShareController::class, 'notify'])->name('documents.share.notify');
+        Route::delete('/documents/share/{share}', [DocumentShareController::class, 'revoke'])->name('documents.share.revoke');
+        Route::post('/documents/upload', [DocumentExplorerController::class, 'upload'])->name('documents.upload');
+        Route::patch('/documents/{document}', [DocumentExplorerController::class, 'rename'])->name('documents.rename');
 
         // Excel import
         Route::get('/import/labour/form', [ImportLabour::class, 'importform'])->name('labour.importform');

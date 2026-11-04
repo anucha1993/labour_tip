@@ -302,31 +302,14 @@ class LabourController extends Controller
         }
 
         $names = (array) $request->input('documents', []);
-        $disk = LabourDocument::targetDisk();
-        $nextOrder = (int) ($labour->documents()->max('sort_order') ?? 0) + 1;
+        $service = app(\App\Services\LabourDocumentService::class);
 
         foreach ($rows as $index => $row) {
             $file = $row['file'] ?? null;
             if (! $file || ! $file->isValid()) {
                 continue;
             }
-            $name = trim((string) ($names[$index]['name'] ?? '')) ?: 'Document';
-            $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension());
-            $slug = Str::slug($name, '-') ?: 'document';
-            $path = $labour->labour_passport_number . '/' . now()->format('Ymd_His') . '_' . $slug . '_' . Str::lower(Str::random(4)) . '.' . $ext;
-
-            $file->storeAs(dirname($path), basename($path), $disk);
-
-            $labour->documents()->create([
-                'name' => $name,
-                'disk' => $disk,
-                'path' => $path,
-                'original_name' => $file->getClientOriginalName(),
-                'size' => $file->getSize(),
-                'mime' => $file->getClientMimeType(),
-                'sort_order' => $nextOrder++,
-                'uploaded_by' => $request->user()->name,
-            ]);
+            $service->store($labour, $file, (string) ($names[$index]['name'] ?? ''), $request->user()->name);
         }
     }
 

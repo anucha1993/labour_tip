@@ -118,7 +118,8 @@
         <div class="card-header">
             <i class="mdi mdi-paperclip"></i><h6 class="card-title">ไฟล์เอกสาร</h6>
             <span class="badge-soft badge-soft-secondary">{{ $documents->count() }} ไฟล์</span>
-            @if ($canEdit)<a href="{{ route('labour.edit', $labour->labour_id) }}#sec-files" class="btn btn-soft btn-sm ms-auto"><i class="mdi mdi-plus"></i> เพิ่มเอกสาร</a>@endif
+            <a href="{{ route('documents.index', ['labour' => $labour->labour_id]) }}" class="btn btn-soft btn-sm ms-auto"><i class="mdi mdi-folder"></i> เปิดในคลังเอกสาร</a>
+            @if ($canEdit)<a href="{{ route('labour.edit', $labour->labour_id) }}#sec-files" class="btn btn-soft btn-sm"><i class="mdi mdi-plus"></i> เพิ่มเอกสาร</a>@endif
         </div>
         @if ($documents->isEmpty())
             <x-empty-state icon="mdi-paperclip" title="ยังไม่มีไฟล์แนบ" />

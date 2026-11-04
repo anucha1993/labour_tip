@@ -122,18 +122,35 @@ class LabourDocument extends Model
     }
 
     /** Resolve the real file URL / response for the open route. */
-    public function openResponse()
+    public function openResponse(bool $download = false)
     {
         $disk = $this->storage();
         $driver = config('filesystems.disks.' . ($this->disk ?: 'public') . '.driver');
+        $disposition = $download ? 'attachment' : 'inline';
 
         if ($driver === 's3') {
             return redirect()->away($disk->temporaryUrl($this->path, now()->addMinutes(15), [
-                'ResponseContentDisposition' => 'inline; filename="' . $this->fileName() . '"',
+                'ResponseContentDisposition' => $disposition . '; filename="' . $this->downloadName() . '"',
             ]));
         }
 
-        return $disk->response($this->path, $this->fileName(), [], 'inline');
+        return $disk->response($this->path, $this->downloadName(), [], $disposition);
+    }
+
+    /** File name offered to the browser: "<document name> - <passport>.<ext>" when known. */
+    public function downloadName(): string
+    {
+        $base = trim((string) $this->name) ?: pathinfo($this->fileName(), PATHINFO_FILENAME);
+        $passport = optional($this->labour)->labour_passport_number;
+        $safe = preg_replace('/[\\/:*?"<>|]+/u', '-', $base . ($passport ? ' - ' . $passport : ''));
+
+        return $safe . '.' . $this->extension();
+    }
+
+    /** Thumbnail-able in an <img>? */
+    public function isPdf(): bool
+    {
+        return $this->extension() === 'pdf';
     }
 
     public function deleteFile(): void

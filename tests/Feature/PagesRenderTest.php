@@ -29,7 +29,7 @@ class PagesRenderTest extends TestCase
 
     public function test_guest_is_redirected_to_login()
     {
-        foreach (['/', '/labour', '/company', '/agency', '/Report', '/settings', '/member', '/action-logs', '/profile', '/ai-chat/logs'] as $url) {
+        foreach (['/', '/labour', '/company', '/agency', '/Report', '/settings', '/member', '/action-logs', '/profile', '/ai-chat/logs', '/documents'] as $url) {
             $this->get($url)->assertRedirect(route('login'));
         }
         $this->get('/login')->assertOk()->assertSee('เข้าสู่ระบบ');
@@ -49,6 +49,7 @@ class PagesRenderTest extends TestCase
             '/Report', '/settings',
             '/member', '/register', '/action-logs', '/action-logs?search=a&action=updated',
             '/profile', '/ai-chat/logs', '/ai-chat/logs?search=a&status=ok',
+            '/documents', '/documents?sort=files', '/documents?company=none', '/documents?q=a&type=Passport',
         ];
         foreach ($pages as $url) {
             $this->get($url)->assertOk();
@@ -58,6 +59,7 @@ class PagesRenderTest extends TestCase
 
         if ($id = $this->sampleLabourId()) {
             $this->get("/labour/form-show/{$id}")->assertOk();
+            $this->get("/documents?labour={$id}")->assertOk();
             $this->get("/labour/form-edit/{$id}")->assertOk();
         }
         if ($cid = optional(\App\Models\company\CompanyModel::query()->orderBy('company_id')->first())->company_id) {

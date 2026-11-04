@@ -65,6 +65,9 @@
             <a href="{{ route('report.index') }}" class="sb-link {{ request()->routeIs('report.*') ? 'active' : '' }}">
                 <i class="mdi mdi-file-chart"></i><span class="label">รายงาน</span>
             </a>
+            <a href="{{ route('documents.index') }}" class="sb-link {{ request()->routeIs('documents.*') ? 'active' : '' }}">
+                <i class="mdi mdi-folder"></i><span class="label">คลังเอกสาร</span>
+            </a>
             <a href="{{ route('ai.chat') }}" class="sb-link {{ request()->routeIs('ai.chat') ? 'active' : '' }}">
                 <i class="mdi mdi-robot"></i><span class="label">ผู้ช่วย AI</span>
                 <span class="badge-soft badge-soft-primary" style="font-size:.62rem">ใหม่</span>

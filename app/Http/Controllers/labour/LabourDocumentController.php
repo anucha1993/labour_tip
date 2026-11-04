@@ -21,7 +21,7 @@ class LabourDocumentController extends Controller
             abort(404, 'ไม่พบไฟล์เอกสารในที่เก็บไฟล์');
         }
 
-        return $document->openResponse();
+        return $document->openResponse(request()->boolean('download'));
     }
 
     /** Open a file that still lives only in a legacy labour_file_* column. */
