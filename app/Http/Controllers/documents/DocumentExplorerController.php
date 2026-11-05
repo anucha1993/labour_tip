@@ -19,11 +19,12 @@ use Illuminate\Support\Facades\Storage;
  *   /documents                  companies as folders (+ recent uploads, storage summary)
  *   /documents?company=ID       workers of that company as folders ("none" = no company)
  *   /documents?labour=ID        files of one worker, with preview / upload / rename / zip
- *   /documents?q=...&type=...   search across all files
+ *   /documents?q=...&type=...   search: matching company / worker folders, then files
  */
 class DocumentExplorerController extends Controller
 {
     private const PER_PAGE = 60;
+    private const FOLDER_HITS = 24; // most company / worker folders shown in a search
 
     public function __construct()
     {
@@ -209,6 +210,35 @@ class DocumentExplorerController extends Controller
 
     private function search(array $base)
     {
+        // Folders first: companies and workers whose name / passport match the words (the type filter is for files only).
+        $companies = collect();
+        $workers = collect();
+        if ($base['q'] !== '') {
+            $like = '%' . $base['q'] . '%';
+            $companies = CompanyModel::query()
+                ->where('company_name', 'LIKE', $like)
+                ->withCount('labours')
+                ->orderBy('company_name')
+                ->limit(self::FOLDER_HITS)
+                ->get();
+            if ($companies->isNotEmpty() && $base['tableReady']) {
+                $filesPer = LabourDocument::query()
+                    ->join('labour', 'labour.labour_id', '=', 'labour_documents.labour_id')
+                    ->whereIn('labour.company_id', $companies->pluck('company_id'))
+                    ->select('labour.company_id', DB::raw('COUNT(*) AS c'))
+                    ->groupBy('labour.company_id')
+                    ->pluck('c', 'company_id');
+                $companies->each(fn ($c) => $c->setAttribute('files_count', (int) ($filesPer[$c->company_id] ?? 0)));
+            }
+            $workers = LabourModel::query()
+                ->with('company')
+                ->where(fn ($w) => $w->where('labour_fullname', 'LIKE', $like)->orWhere('labour_passport_number', 'LIKE', $like))
+                ->when($base['tableReady'], fn ($q) => $q->withCount('documents')->withSum('documents', 'size'))
+                ->orderBy('labour_fullname')
+                ->limit(self::FOLDER_HITS)
+                ->get();
+        }
+
         $results = $base['tableReady']
             ? LabourDocument::query()
                 ->with('labour.company')
@@ -233,6 +263,9 @@ class DocumentExplorerController extends Controller
 
         return view('documents.index', $base + [
             'mode' => 'search',
+            'companies' => $companies,
+            'workers' => $workers,
+            'folderHits' => self::FOLDER_HITS,
             'results' => $results,
             'crumbs' => [['label' => 'ผลการค้นหา']],
         ]);

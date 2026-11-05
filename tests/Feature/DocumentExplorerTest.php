@@ -145,7 +145,41 @@ class DocumentExplorerTest extends TestCase
         $this->actingAs($this->user('Member'))->get('/documents?q=MB000002')->assertOk()->assertSee('พบ 1 ไฟล์')->assertSee('MYO MIN')->assertDontSee('AUNG KO');
         $this->actingAs($this->user('Member'))->get('/documents?q=' . urlencode('บี จำกัด'))->assertOk()->assertSee('พบ 1 ไฟล์')->assertSee('MYO MIN');
         $this->actingAs($this->user('Member'))->get('/documents?type=Passport')->assertOk()->assertSee('พบ 1 ไฟล์')->assertSee('AUNG KO');
-        $this->actingAs($this->user('Member'))->get('/documents?q=nothing-here')->assertOk()->assertSee('ไม่พบไฟล์ที่ตรงกับคำค้น');
+        $this->actingAs($this->user('Member'))->get('/documents?q=nothing-here')->assertOk()->assertSee('ไม่พบโฟลเดอร์หรือไฟล์ที่ตรงกับคำค้น');
+    }
+
+    public function test_search_also_lists_matching_company_and_worker_folders()
+    {
+        $a = $this->labour('AUNG KO', 'MA000001', 1);
+        $b = $this->labour('MYO MIN', 'MB000002', 2);
+        $this->doc($a, 'Passport');
+        $this->doc($b, 'Work Permit', 'work.pdf');
+        $this->doc($b, 'Visa', 'visa.pdf');
+
+        // A company name: its folder (with counts) comes first, then the files inside it.
+        $res = $this->actingAs($this->user('Member'))->get('/documents?q=' . urlencode('บี'))->assertOk();
+        $res->assertSee('โฟลเดอร์ที่ตรงกับคำค้น 1 รายการ')
+            ->assertSee('href="' . route('documents.index', ['company' => 2]) . '"', false)
+            ->assertSee('บริษัท · 1 คน · 2 ไฟล์')
+            ->assertSee('พบ 2 ไฟล์')
+            ->assertSee('id="dxSelBar"', false);
+
+        // A passport number: the worker folder, selectable for the zip, plus the files.
+        $res = $this->actingAs($this->user('Member'))->get('/documents?q=MB0000')->assertOk();
+        $res->assertSee('โฟลเดอร์ที่ตรงกับคำค้น 1 รายการ')
+            ->assertSee('href="' . route('documents.index', ['labour' => $b->labour_id]) . '"', false)
+            ->assertSee('data-kind="labour" value="' . $b->labour_id . '" data-files="2"', false)
+            ->assertDontSee('AUNG KO');
+
+        // A worker without files still shows as a folder, and the "no files" text is the soft one.
+        $this->labour('ZAW ZAW', 'MC000003', 1);
+        $res = $this->actingAs($this->user('Member'))->get('/documents?q=ZAW')->assertOk();
+        $res->assertSee('โฟลเดอร์ที่ตรงกับคำค้น 1 รายการ')
+            ->assertSee('ไม่พบไฟล์ที่ชื่อตรงกับคำค้น')
+            ->assertDontSee('ไม่พบโฟลเดอร์หรือไฟล์');
+
+        // The type filter alone is a file search: no folder row.
+        $this->actingAs($this->user('Member'))->get('/documents?type=Visa')->assertOk()->assertDontSee('โฟลเดอร์ที่ตรงกับคำค้น')->assertSee('พบ 1 ไฟล์');
     }
 
     public function test_upload_rename_zip_and_delete_follow_roles()

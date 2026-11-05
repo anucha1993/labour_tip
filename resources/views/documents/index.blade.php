@@ -335,12 +335,70 @@
 
     {{-- ========================================================== SEARCH --}}
     @else
+        @php $folderHitsN = $companies->count() + $workers->count(); @endphp
+        @if ($folderHitsN > 0)
+            <div class="text-2 small mb-2"><i class="mdi mdi-folder text-warning"></i> โฟลเดอร์ที่ตรงกับคำค้น {{ number_format($folderHitsN) }} รายการ{{ $companies->count() >= $folderHits || $workers->count() >= $folderHits ? ' (แสดง ' . $folderHits . ' รายการแรก ลองพิมพ์ให้เจาะจงขึ้น)' : '' }}</div>
+            <div class="dx-grid folders mb-4" id="dxFolderHits">
+                @foreach ($companies as $c)
+                    <div class="dx-folder {{ (int) $c->files_count === 0 ? 'muted' : '' }}">
+                        <a href="{{ route('documents.index', ['company' => $c->company_id]) }}" class="stretched-link" aria-label="เปิด {{ $c->company_name }}"></a>
+                        <span class="ic"><i class="mdi mdi-folder"></i></span>
+                        <span class="body">
+                            <span class="t d-block" title="{{ $c->company_name }}">{{ $c->company_name }}</span>
+                            <span class="m d-block">บริษัท · {{ number_format($c->labours_count) }} คน · {{ number_format((int) $c->files_count) }} ไฟล์{{ $c->company_status === 'disable' ? ' · ปิดใช้งาน' : '' }}</span>
+                        </span>
+                    </div>
+                @endforeach
+                @foreach ($workers as $wk)
+                    @php $n = $tableReady ? (int) $wk->documents_count : $wk->documentList()->count(); @endphp
+                    <div class="dx-folder person {{ $n === 0 ? 'muted' : '' }}">
+                        <a href="{{ route('documents.index', ['labour' => $wk->labour_id]) }}" class="stretched-link" aria-label="เปิด {{ $wk->labour_fullname }}"></a>
+                        @if ($n > 0)<label class="dx-check" title="เลือกโฟลเดอร์นี้"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $wk->labour_id }}" data-files="{{ $n }}" data-bytes="{{ (int) ($wk->documents_sum_size ?? 0) }}" aria-label="เลือก {{ $wk->labour_fullname }}"></label>@endif
+                        <span class="ic">@if ($wk->hasPhoto())<img src="{{ $wk->photoUrl() }}" alt="" loading="lazy">@else<i class="mdi mdi-account"></i>@endif</span>
+                        <span class="body">
+                            <span class="t d-block" title="{{ $wk->labour_fullname }}">{{ $wk->labour_fullname }}</span>
+                            <span class="m d-block">{{ $wk->labour_passport_number ?: '-' }} · {{ $n }} ไฟล์ · {{ optional($wk->company)->company_name ?: 'ไม่ระบุบริษัท' }}</span>
+                        </span>
+                    </div>
+                @endforeach
+            </div>
+            <div class="dx-list d-none mb-4" id="dxFolderHitsList">
+                <div class="card"><div class="table-wrap"><table class="table table-modern">
+                    <thead><tr><th style="width:36px"></th><th>โฟลเดอร์</th><th class="d-none d-md-table-cell">รายละเอียด</th><th class="text-end">ไฟล์</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach ($companies as $c)
+                        <tr>
+                            <td></td>
+                            <td class="fw-name"><a href="{{ route('documents.index', ['company' => $c->company_id]) }}" class="text-reset"><i class="mdi mdi-folder text-warning"></i> {{ $c->company_name }}</a></td>
+                            <td class="d-none d-md-table-cell text-2">บริษัท · {{ number_format($c->labours_count) }} คน</td>
+                            <td class="text-end">{{ number_format((int) $c->files_count) }}</td>
+                            <td class="td-actions"><a href="{{ route('documents.index', ['company' => $c->company_id]) }}" class="btn btn-soft btn-sm">เปิด</a></td>
+                        </tr>
+                    @endforeach
+                    @foreach ($workers as $wk)
+                        @php $n = $tableReady ? (int) $wk->documents_count : $wk->documentList()->count(); @endphp
+                        <tr>
+                            <td>@if ($n > 0)<label class="dx-check static"><input type="checkbox" class="dx-sel" data-kind="labour" value="{{ $wk->labour_id }}" data-files="{{ $n }}" data-bytes="{{ (int) ($wk->documents_sum_size ?? 0) }}" aria-label="เลือก {{ $wk->labour_fullname }}"></label>@endif</td>
+                            <td class="fw-name"><a href="{{ route('documents.index', ['labour' => $wk->labour_id]) }}" class="text-reset"><i class="mdi mdi-account text-primary"></i> {{ $wk->labour_fullname }}</a><div class="sub text-mono">{{ $wk->labour_passport_number }}</div></td>
+                            <td class="d-none d-md-table-cell text-2">{{ optional($wk->company)->company_name ?: 'ไม่ระบุบริษัท' }} · {{ status_job_label($wk->labour_status_job) }}</td>
+                            <td class="text-end">{{ $n }}</td>
+                            <td class="td-actions"><a href="{{ route('documents.index', ['labour' => $wk->labour_id]) }}" class="btn btn-soft btn-sm">เปิด</a></td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table></div></div>
+            </div>
+        @endif
         @if (! $results || $results->isEmpty())
-            <x-empty-state icon="mdi-magnify" title="ไม่พบไฟล์ที่ตรงกับคำค้น" text="ลองค้นด้วยเลขพาสปอร์ตหรือบางส่วนของชื่อ">
-                <a href="{{ route('documents.index') }}" class="btn btn-soft"><i class="mdi mdi-arrow-left"></i> กลับหน้าหลัก</a>
-            </x-empty-state>
+            @if ($folderHitsN === 0)
+                <x-empty-state icon="mdi-magnify" title="ไม่พบโฟลเดอร์หรือไฟล์ที่ตรงกับคำค้น" text="ลองค้นด้วยเลขพาสปอร์ต บางส่วนของชื่อแรงงาน หรือชื่อบริษัท">
+                    <a href="{{ route('documents.index') }}" class="btn btn-soft"><i class="mdi mdi-arrow-left"></i> กลับหน้าหลัก</a>
+                </x-empty-state>
+            @else
+                <div class="text-2 small">ไม่พบไฟล์ที่ชื่อตรงกับคำค้น เปิดโฟลเดอร์ด้านบนเพื่อดูไฟล์ทั้งหมด</div>
+            @endif
         @else
-            <div class="text-2 small mb-2">พบ {{ number_format($results->total()) }} ไฟล์</div>
+            <div class="text-2 small mb-2"><i class="mdi mdi-file-document-outline"></i> พบ {{ number_format($results->total()) }} ไฟล์</div>
             <div class="dx-grid" id="dxResults">
                 @foreach ($results as $doc)
                     @include('documents._file-card', ['doc' => $doc, 'attrs' => $fileAttrs($doc), 'showLabour' => true])
@@ -427,7 +485,7 @@
         </div>
     @endif
 
-    @if (in_array($mode, ['company', 'worker'], true))
+    @if (in_array($mode, ['company', 'worker', 'search'], true))
         @include('documents._select-bar', ['action' => route('documents.zip.selected'), 'maxFiles' => $zipMaxFiles, 'maxBytes' => $zipMaxBytes])
     @endif
 @endsection
