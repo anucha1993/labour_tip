@@ -20,7 +20,7 @@
         </div>
     </form>
 
-    @if (user_is('MasterAdmin'))
+    @if (user_can('documents.delete'))
         <form method="POST" id="fileDeleteForm" class="d-none" data-confirm="" data-confirm-title="ยืนยันการลบไฟล์" data-confirm-ok="ลบไฟล์">
             @csrf
             @method('DELETE')

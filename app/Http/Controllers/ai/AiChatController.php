@@ -93,10 +93,10 @@ class AiChatController extends Controller
         return response()->json($result + ['log_id' => $log ? $log->id : null]);
     }
 
-    /** 👍 / 👎 on an answer (own answers only; MasterAdmin may rate any). Reviewed on the AI log page. */
+    /** 👍 / 👎 on an answer (own answers only; permission ai.logs may rate any). Reviewed on the AI log page. */
     public function feedback(Request $request, AiChatLog $log)
     {
-        abort_unless($log->user_id === $request->user()->id || $request->user()->type === 'MasterAdmin', 403);
+        abort_unless($log->user_id === $request->user()->id || $request->user()->can('ai.logs'), 403);
         $data = $request->validate([
             'rating' => ['required', 'integer', 'in:-1,1'],
             'feedback' => ['nullable', 'string', 'max:500'],
@@ -122,10 +122,10 @@ class AiChatController extends Controller
         return response()->json(['enabled' => true, 'can_pay' => $this->canPay($request)] + $s);
     }
 
-    /** Paying for the AI service is a company decision → MasterAdmin only. */
+    /** Paying for the AI service is a company decision → permission ai.pay (MasterAdmin by default). */
     private function canPay(Request $request): bool
     {
-        return optional($request->user())->type === 'MasterAdmin';
+        return optional($request->user())->can('ai.pay') === true;
     }
 
     /**

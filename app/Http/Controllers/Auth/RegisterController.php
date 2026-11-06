@@ -38,7 +38,7 @@ class RegisterController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'type' => ['required', Rule::in(['MasterAdmin', 'Admin', 'Member'])],
+            'type' => ['required', Rule::in(array_keys(\App\Support\Permissions::roles()))],
             'status' => ['required', Rule::in(['enable', 'disable'])],
         ], [
             'name.required' => 'กรุณากรอกชื่อ-สกุล',

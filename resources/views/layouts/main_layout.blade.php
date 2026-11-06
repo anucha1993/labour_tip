@@ -30,8 +30,6 @@
     $user = auth()->user();
     $initials = mb_strtoupper(mb_substr(trim($user->name ?? '?'), 0, 1));
     $expiryTotal = (int) ($expiryCounts['total'] ?? 0);
-    $isMaster = $user && $user->type === 'MasterAdmin';
-    $isAdmin = $user && in_array($user->type, ['Admin', 'MasterAdmin'], true);
 @endphp
 <div class="app-shell">
 
@@ -53,43 +51,66 @@
                     <span class="sb-badge" title="เอกสารใกล้หมดอายุ">{{ $expiryTotal > 999 ? '999+' : $expiryTotal }}</span>
                 @endif
             </a>
+            @can('labour.view')
             <a href="{{ route('labour.index') }}" class="sb-link {{ request()->routeIs('labour.*') || request()->routeIs('import-excel.*') ? 'active' : '' }}">
                 <i class="mdi mdi-account-multiple"></i><span class="label">แรงงานต่างด้าว</span>
             </a>
+            @endcan
+            @can('company.view')
             <a href="{{ route('company.index') }}" class="sb-link {{ request()->routeIs('company.*') ? 'active' : '' }}">
                 <i class="mdi mdi-domain"></i><span class="label">บริษัท / นายจ้าง</span>
             </a>
+            @endcan
+            @can('agency.view')
             <a href="{{ route('agency.index') }}" class="sb-link {{ request()->routeIs('agency.*') ? 'active' : '' }}">
                 <i class="mdi mdi-earth"></i><span class="label">เอเจนซี่</span>
             </a>
+            @endcan
+            @can('report.view')
             <a href="{{ route('report.index') }}" class="sb-link {{ request()->routeIs('report.*') ? 'active' : '' }}">
                 <i class="mdi mdi-file-chart"></i><span class="label">รายงาน</span>
             </a>
+            @endcan
+            @can('documents.view')
             <a href="{{ route('documents.index') }}" class="sb-link {{ request()->routeIs('documents.*') ? 'active' : '' }}">
                 <i class="mdi mdi-folder"></i><span class="label">คลังเอกสาร</span>
             </a>
+            @endcan
+            @can('ai.chat')
             <a href="{{ route('ai.chat') }}" class="sb-link {{ request()->routeIs('ai.chat') ? 'active' : '' }}">
                 <i class="mdi mdi-robot"></i><span class="label">ผู้ช่วย AI</span>
                 <span class="badge-soft badge-soft-primary" style="font-size:.62rem">ใหม่</span>
             </a>
+            @endcan
 
-            @if ($isAdmin)
+            @if (user_can('admin.settings', 'admin.users', 'admin.roles', 'admin.logs', 'ai.logs'))
                 <div class="sb-section">การจัดการ</div>
+            @endif
+            @can('admin.settings')
                 <a href="{{ route('setting.index') }}" class="sb-link {{ request()->routeIs('setting.*') ? 'active' : '' }}">
                     <i class="mdi mdi-bell-ring"></i><span class="label">ตั้งค่าวันแจ้งเตือน</span>
                 </a>
-            @endif
-            @if ($isMaster)
+            @endcan
+            @can('admin.users')
                 <a href="{{ route('member.index') }}" class="sb-link {{ request()->routeIs('member.*') || request()->routeIs('register') ? 'active' : '' }}">
                     <i class="mdi mdi-account-key"></i><span class="label">สมาชิก / ผู้ใช้งาน</span>
                 </a>
+            @endcan
+            @can('admin.roles')
+                <a href="{{ route('roles.index') }}" class="sb-link {{ request()->routeIs('roles.*') ? 'active' : '' }}">
+                    <i class="mdi mdi-shield-account"></i><span class="label">โปรไฟล์สิทธิ์</span>
+                </a>
+            @endcan
+            @can('admin.logs')
                 <a href="{{ route('action-logs.index') }}" class="sb-link {{ request()->routeIs('action-logs.*') ? 'active' : '' }}">
                     <i class="mdi mdi-history"></i><span class="label">ประวัติการแก้ไข</span>
                 </a>
+            @endcan
+            @can('ai.logs')
                 <a href="{{ route('ai.logs') }}" class="sb-link {{ request()->routeIs('ai.logs') ? 'active' : '' }}">
                     <i class="mdi mdi-comment-text-outline"></i><span class="label">ประวัติการใช้ AI</span>
                 </a>
-            @endif
+            @endcan
         </nav>
 
         <div class="sb-user">

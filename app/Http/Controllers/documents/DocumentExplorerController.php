@@ -44,12 +44,15 @@ class DocumentExplorerController extends Controller
             'type' => $type,
             'sort' => $sort,
             'types' => $this->types(),
-            'canEdit' => user_is('Admin', 'MasterAdmin'),
-            'canDelete' => user_is('MasterAdmin'),
+            'canUpload' => user_can('documents.upload'),
+            'canRename' => user_can('documents.rename'),
+            'canEdit' => user_can('documents.upload', 'documents.rename'),
+            'canDelete' => user_can('documents.delete'),
+            'canDownload' => user_can('documents.download'),
             'tableReady' => LabourDocument::tableReady(),
             'zipMaxFiles' => DocumentZipService::maxFiles(),
             'zipMaxBytes' => DocumentZipService::maxBytes(),
-            'canShare' => user_is('Admin', 'MasterAdmin') && DocumentShare::tableReady(),
+            'canShare' => user_can('documents.share') && DocumentShare::tableReady(),
         ];
 
         if ($labourId) {

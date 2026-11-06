@@ -14,13 +14,25 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
    ```
 3. ตั้งค่า `.env` (`APP_URL`, `DB_*`) และตั้ง `APP_DEBUG=false` บน production
 
-## สิทธิ์การใช้งาน (กำหนดใน `routes/web.php`)
+## โปรไฟล์สิทธิ์ (กำหนดได้ในหน้า "โปรไฟล์สิทธิ์" `/roles`)
 
-| สิทธิ์ | ทำอะไรได้ |
+- โปรไฟล์ = `users.type` (MasterAdmin, Admin, Member และที่สร้างเอง เช่น Head) เก็บในตาราง `roles` / `role_permissions` (migration `2026_11_06_000001`)
+- หน้า `/roles/{key}` (ต้องมีสิทธิ์ `admin.roles`) เลือกโปรไฟล์ทางซ้าย ขวาเป็นรายการโมดูล (แรงงาน, บริษัท, เอเจนซี่, รายงาน, คลังเอกสาร, ผู้ช่วย AI, ประวัติ AI, ตั้งค่าแจ้งเตือน, สมาชิก, โปรไฟล์สิทธิ์, ประวัติการแก้ไข) แต่ละโมดูลมีสวิตช์เปิด/ปิด และ dropdown เลือกแอ็กชัน (ดู / เพิ่ม / แก้ไข / ลบ / นำเข้า Excel / ดาวน์โหลด zip / อัปโหลด / แชร์ ...) ปิดสวิตช์ = ไม่เห็นเมนูนั้นเลย บันทึกทีละโปรไฟล์ (`POST /roles/{key}/permissions`) มีผลทันที (cache 1 ชม. ล้างทุกครั้งที่บันทึก)
+- สร้างโปรไฟล์เอง (รหัสอังกฤษ + ชื่อไทย + คัดลอกสิทธิ์จากโปรไฟล์เดิมได้), เปลี่ยนชื่อ/คำอธิบาย, คืนค่าเริ่มต้น (Admin, Member), ลบโปรไฟล์ที่สร้างเองเมื่อไม่มีผู้ใช้ โปรไฟล์ใหม่ขึ้นในหน้าเพิ่ม/แก้ไขสมาชิกทันที
+- สิทธิ์ย่อยทั้งหมด 28 รายการ (`labour.view`, `documents.share`, `ai.update`, `admin.users` ...) อยู่ใน `app/Support/Permissions::groups()` ซึ่งเป็นที่เดียวที่เพิ่ม/เปลี่ยนชื่อสิทธิ์
+- MasterAdmin มีทุกสิทธิ์เสมอและแก้ไม่ได้ (`Gate::before`) โปรไฟล์ของผู้ที่กำลังแก้จะคง `admin.roles` ไว้เสมอ
+- ถ้ายังไม่รัน migrate ระบบใช้ค่าเริ่มต้นใน `Permissions::defaults()` ซึ่งเท่ากับสิทธิ์เดิมก่อนมีหน้านี้ (Member ดูอย่างเดียว, Admin เพิ่ม/แก้ไข, MasterAdmin ทุกอย่าง)
+- การตรวจสิทธิ์: route ใช้ `->middleware('perm:labour.edit')` (หลายค่า = อันใดอันหนึ่ง), Blade ใช้ `@can('labour.edit')` หรือ `user_can('a', 'b')`, PHP ใช้ `$user->can('ai.update')` ทุกตัวอ่านตารางเดียวกันผ่าน Gate ใน `AuthServiceProvider`
+
+| โปรไฟล์เริ่มต้น | ทำอะไรได้ |
 |---|---|
-| Member | ดูข้อมูลทุกหน้า, ดาวน์โหลดรายงาน/Excel |
-| Admin | Member + เพิ่ม/แก้ไขแรงงาน บริษัท เอเจนซี่, นำเข้า Excel, Mass update, ตั้งค่าวันแจ้งเตือน |
-| MasterAdmin | Admin + ลบข้อมูล/ไฟล์, จัดการสมาชิก, ดูประวัติการแก้ไข, ดูประวัติการใช้ผู้ช่วย AI |
+| Member | ดูข้อมูลทุกหน้า, ดาวน์โหลดรายงาน/Excel, ดาวน์โหลด zip, ถามผู้ช่วย AI |
+| Admin | Member + เพิ่ม/แก้ไขแรงงาน บริษัท เอเจนซี่, นำเข้า Excel, Mass update, อัปโหลด/เปลี่ยนชื่อ/แชร์เอกสาร, ตั้งค่าวันแจ้งเตือน |
+| MasterAdmin | ทุกสิทธิ์ รวมลบข้อมูล/ไฟล์, จัดการสมาชิกและสิทธิ์, ดูประวัติการแก้ไข, ดูประวัติการใช้ผู้ช่วย AI |
+
+### ไฟล์ที่เกี่ยวกับสิทธิ์
+
+`app/Support/Permissions.php` (รายการสิทธิ์ + ค่าเริ่มต้น + อ่านตาราง), `app/Providers/AuthServiceProvider.php` (Gate), `app/Http/Middleware/CheckPermission.php` (alias `perm`), `app/Http/Controllers/member/RoleController.php` + `resources/views/roles/index.blade.php` (หน้า UI), helper `user_can()` ใน `app/Support/helpers.php`, migration `2026_11_06_000001_create_roles_tables.php`, เทสต์ `tests/Feature/RolePermissionTest.php`
 
 ## ผู้ช่วย AI และประวัติการใช้งาน
 
@@ -29,6 +41,7 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
 - แนบไฟล์มากับคำถามได้ (ปุ่มคลิปหรือลากวาง PDF/JPG/PNG/WEBP/Excel/CSV ≤ 15 MB): ไฟล์เก็บที่ `storage/app/ai-uploads/<user>/` 24 ชม. เอกสารอ่านด้วย OCR ตัวเดียวกัน ตาราง Excel/CSV แปลงเป็นข้อความแถวต่อแถวด้วย `app/Services/Ai/SpreadsheetReader.php` (วันที่ใน Excel ออกมาเป็น ปี-เดือน-วัน สูงสุด 200 แถว) แล้วแนบไปกับคำถาม เช่น "อัปเดตวีซ่าตามไฟล์นี้" AI จะเสนอแก้ทุกแถวใน propose_update ครั้งเดียว (`items`) และยืนยันครั้งเดียว
 - **แก้ไขข้อมูลผ่าน AI (MasterAdmin เท่านั้น)** `app/Services/Ai/DataUpdateService.php` ทำงาน 2 ขั้น: `propose_update` (ระบุรายคนด้วย query, หลายรายการด้วย items, หรือทุกคนที่ตรงเงื่อนไขด้วย filters เช่น ทั้งบริษัท สูงสุด 500 คน; ไม่มี filters = ไม่อนุญาต) ตรวจสอบค่า (ฟิลด์ที่อนุญาตเท่านั้น วันที่ไทย/สากล ชื่อบริษัท/เอเจนซี่/สัญชาติแปลงเป็นรหัสให้) แล้วคืนตารางค่าเดิม→ค่าใหม่ เก็บไว้ 10 นาที → ผู้ใช้พิมพ์ "ยืนยัน" → `apply_update` บันทึกค่าที่เก็บไว้ (ไม่ใช่ค่าที่โมเดลส่งมาตอนนั้น) ผ่าน Eloquent จึงมีประวัติใน action_logs และ `updated_by` ลงท้าย "(AI)" ไม่มีการลบรายการ ผู้ใช้สิทธิ์อื่นจะไม่เห็นเครื่องมือนี้และถูกปฏิเสธถ้าเรียก
 - โมเดล: ตั้งใน `.env` `OPENAI_MODEL` (ปัจจุบัน gpt-4.1 ผ่าน proxy datacorpapi.com รองรับ gpt-4o-mini, gpt-4.1, gpt-4o, gpt-5) prompt หลักอยู่ที่ `LabourAssistant::systemPrompt()` (อภิธานศัพท์ ตารางเลือกเครื่องมือ รูปแบบคำตอบ กฎ) และคำอธิบายเครื่องมือใน `tools()`
+- เมื่อ API ตอบว่ายุ่ง/ขัดข้องชั่วคราว (429, 500, 502, 503 "AI service is busy", 504) หรือต่อไม่ติด `OpenAiClient::send()` จะลองซ้ำให้เอง `OPENAI_RETRIES` ครั้ง (ค่าเริ่มต้น 2) หน่วง 1 s, 2 s (× `OPENAI_RETRY_DELAY_MS`, เคารพ Retry-After สูงสุด 15 s) ถ้ายังไม่ผ่านผู้ใช้เห็นข้อความไทย "บริการ AI มีผู้ใช้งานมาก... ลองซ้ำให้แล้ว n ครั้ง" ข้อผิดพลาด 4xx อื่นไม่ลองซ้ำ
 - เครื่องมือวิเคราะห์เพิ่มเติม: `get_expiry_timeline` (เอกสารหมดอายุรายเดือนล่วงหน้า แยกบริษัทได้), `get_change_history` (ใครแก้อะไรเมื่อไร จาก action_logs), `check_data_quality` (ฟิลด์ว่าง วันที่ขัดกัน ทำงานอยู่แต่เอกสารหมด ไม่มีไฟล์)
 - ทุกคำตอบมีปุ่ม 👍/👎 (เก็บใน `ai_chat_logs.rating/feedback` migration `2026_10_30_000001`) และชิปคำถามต่อเนื่องที่เปลี่ยนตามสิ่งที่ AI เพิ่งทำ หน้าประวัติการใช้ AI กรองคำตอบที่ถูกกด 👎 ได้ เพื่อนำไปปรับ prompt
 - ชุดทดสอบคุณภาพกับโมเดลจริง: `php artisan ai:eval [-v] [--only=id] [--model=...]` อ่านคำถามจาก `tests/ai-eval.json` (ตรวจเครื่องมือที่ใช้/ห้ามใช้ และคำที่ต้องมีในคำตอบ) รันทุกครั้งที่แก้ prompt หรือเปลี่ยนโมเดล ใช้ token จริง ไม่เขียนฐานข้อมูล

@@ -4,12 +4,14 @@ namespace App\Http\Controllers\member;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Permissions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
+    /** @deprecated roles are editable now: see Permissions::roles() */
     public const ROLES = ['MasterAdmin', 'Admin', 'Member'];
 
     public function __construct()
@@ -26,12 +28,12 @@ class AuthController extends Controller
                 $like = '%' . $keyword . '%';
                 $q->where(fn ($w) => $w->where('name', 'LIKE', $like)->orWhere('email', 'LIKE', $like));
             })
-            ->orderByRaw("FIELD(type, 'MasterAdmin', 'Admin', 'Member')")
+            ->orderByRaw($this->roleOrder())
             ->orderBy('name')
             ->paginate(25)
             ->withQueryString();
 
-        return view('member.index', ['users' => $users, 'keyword' => $keyword, 'roles' => self::ROLES]);
+        return view('member.index', ['users' => $users, 'keyword' => $keyword, 'roles' => Permissions::roles()]);
     }
 
     /** Kept for backwards compatibility with any bookmarked AJAX URL. */
@@ -48,7 +50,7 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:6', 'confirmed'],
-            'type' => ['required', Rule::in(self::ROLES)],
+            'type' => ['required', Rule::in(array_keys(Permissions::roles()))],
             'status' => ['required', Rule::in(['enable', 'disable'])],
         ], [
             'name.required' => 'กรุณากรอกชื่อ-สกุล',
@@ -64,8 +66,8 @@ class AuthController extends Controller
             if ($data['status'] === 'disable') {
                 return back()->with('error', 'ไม่สามารถปิดการใช้งานบัญชีที่กำลังใช้งานอยู่ได้');
             }
-            if ($data['type'] !== 'MasterAdmin') {
-                return back()->with('error', 'ไม่สามารถลดสิทธิ์ของบัญชีที่กำลังใช้งานอยู่ได้');
+            if ($data['type'] !== $user->type) {
+                return back()->with('error', 'ไม่สามารถเปลี่ยนบทบาทของบัญชีที่กำลังใช้งานอยู่ได้ (ให้ผู้ดูแลคนอื่นเปลี่ยนให้)');
             }
         }
 
@@ -79,6 +81,18 @@ class AuthController extends Controller
         $user->save();
 
         return redirect()->route('member.index')->with('success', 'บันทึกข้อมูลสมาชิก ' . $user->name . ' เรียบร้อยแล้ว');
+    }
+
+    /** Roles in the order of the roles page (MasterAdmin first), portable across MySQL and SQLite. */
+    private function roleOrder(): string
+    {
+        $keys = array_keys(Permissions::roles());
+        $sql = 'CASE type';
+        foreach ($keys as $i => $key) {
+            $sql .= " WHEN '" . str_replace("'", "''", $key) . "' THEN " . $i;
+        }
+
+        return $sql . ' ELSE ' . count($keys) . ' END';
     }
 
     public function destroy(Request $request, $id)

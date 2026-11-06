@@ -5,7 +5,7 @@
 
 @section('content')
     <x-page-header title="สวัสดี, {{ auth()->user()->name }}" subtitle="ภาพรวมข้อมูลแรงงานและเอกสารที่ต้องดำเนินการ ณ วันที่ {{ fmt_date(now()) }}">
-        @if (user_is('Admin', 'MasterAdmin'))
+        @if (user_can('labour.create'))
             <a href="{{ route('labour.create') }}" class="btn btn-primary"><i class="mdi mdi-plus"></i> เพิ่มแรงงาน</a>
         @endif
         <a href="{{ route('report.index') }}" class="btn btn-soft"><i class="mdi mdi-file-chart"></i> ออกรายงาน</a>
@@ -37,7 +37,7 @@
             <h5 class="card-title">แจ้งเตือนเอกสารใกล้หมดอายุ</h5>
             <span class="badge-soft badge-soft-danger">{{ number_format($counts['total']) }} รายการ</span>
             <span class="ms-auto small text-3">นับเฉพาะแรงงานที่สถานะ "ทำงาน" · ตั้งค่าจำนวนวันล่วงหน้าได้ที่
-                @if (user_is('Admin', 'MasterAdmin'))<a href="{{ route('setting.index') }}">ตั้งค่าวันแจ้งเตือน</a>@else เมนูตั้งค่า @endif
+                @if (user_can('admin.settings'))<a href="{{ route('setting.index') }}">ตั้งค่าวันแจ้งเตือน</a>@else เมนูตั้งค่า @endif
             </span>
         </div>
 
@@ -99,7 +99,7 @@
                                             <td><x-days-left :date="$row->{$column}" :warn="$thresholds[$type]" /></td>
                                             <td class="td-actions">
                                                 <a href="{{ route('labour.show', $row->labour_id) }}" class="btn btn-soft btn-sm"><i class="mdi mdi-eye"></i> ดูข้อมูล</a>
-                                                @if (user_is('Admin', 'MasterAdmin'))
+                                                @if (user_can('labour.edit'))
                                                     <a href="{{ route('labour.edit', $row->labour_id) }}" class="btn btn-soft btn-sm"><i class="mdi mdi-pencil"></i></a>
                                                 @endif
                                             </td>

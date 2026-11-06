@@ -12,7 +12,7 @@
     ][$mode];
 
     // Turn a document row into the data-* attributes the preview panel reads.
-    $fileAttrs = function ($doc, $labourRow = null) use ($canEdit, $canDelete) {
+    $fileAttrs = function ($doc, $labourRow = null) use ($canRename, $canDelete) {
         $labourRow = $labourRow ?: $doc->labour;
         $persisted = (bool) $doc->exists;
         $openUrl = $persisted ? $doc->url() : route('labour.document.openLegacy', [$doc->labour_id, $doc->legacy_column]);
@@ -28,7 +28,7 @@
             'data-disk' => $doc->disk === 'r2' ? 'Cloudflare R2' : 'เซิร์ฟเวอร์',
             'data-labour' => $labourRow ? trim($labourRow->labour_fullname . ' · ' . $labourRow->labour_passport_number, ' ·') : '',
             'data-labour-url' => $labourRow ? route('documents.index', ['labour' => $labourRow->labour_id]) : '',
-            'data-rename' => $persisted && $canEdit ? route('documents.rename', $doc->id) : '',
+            'data-rename' => $persisted && $canRename ? route('documents.rename', $doc->id) : '',
             'data-delete' => $persisted && $canDelete ? route('labour.document.delete', $doc->id) : '',
         ];
     };
@@ -48,7 +48,7 @@
                 <a href="{{ route('documents.zip', $labour->labour_id) }}" class="btn btn-soft" data-no-loader><i class="mdi mdi-zip-box"></i> ดาวน์โหลดทั้งหมด (zip)</a>
             @endif
             <a href="{{ route('labour.show', $labour->labour_id) }}" class="btn btn-soft"><i class="mdi mdi-account"></i> ข้อมูลแรงงาน</a>
-            @if ($canEdit)
+            @if ($canUpload)
                 <button type="button" class="btn btn-primary" id="dxUploadBtn"><i class="mdi mdi-cloud-upload"></i> อัปโหลดไฟล์</button>
             @endif
         @endif
@@ -273,7 +273,7 @@
             <div class="ms-auto text-2 small">{{ $documents->count() }} ไฟล์</div>
         </div></div>
 
-        @if ($canEdit)
+        @if ($canUpload)
             <form method="POST" action="{{ route('documents.upload') }}" enctype="multipart/form-data" id="dxUploadForm" class="card mb-3 {{ $errors->any() ? '' : 'd-none' }}">
                 @csrf
                 <input type="hidden" name="labour_id" value="{{ $labour->labour_id }}">
@@ -450,7 +450,7 @@
             <a href="#" class="btn btn-primary btn-sm" id="dxPvOpen" target="_blank" rel="noopener" data-no-loader><i class="mdi mdi-open-in-new"></i> เปิดเต็มจอ</a>
             <a href="#" class="btn btn-soft btn-sm" id="dxPvDownload" data-no-loader><i class="mdi mdi-download"></i> ดาวน์โหลด</a>
             <a href="#" class="btn btn-soft btn-sm d-none" id="dxPvFolder"><i class="mdi mdi-folder"></i> โฟลเดอร์แรงงาน</a>
-            @if ($canEdit)
+            @if ($canRename)
                 <button type="button" class="btn btn-soft btn-sm d-none" id="dxPvRename"><i class="mdi mdi-pencil"></i> เปลี่ยนชื่อ</button>
             @endif
             @if ($canDelete)
@@ -467,7 +467,7 @@
         @include('documents._share-modal')
     @endif
 
-    @if ($canEdit)
+    @if ($canRename)
         <div class="modal fade" id="dxRenameModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-sm modal-dialog-centered">
                 <form method="POST" action="#" class="modal-content" id="dxRenameForm">
@@ -485,7 +485,7 @@
         </div>
     @endif
 
-    @if (in_array($mode, ['company', 'worker', 'search'], true))
+    @if ($canDownload && in_array($mode, ['company', 'worker', 'search'], true))
         @include('documents._select-bar', ['action' => route('documents.zip.selected'), 'maxFiles' => $zipMaxFiles, 'maxBytes' => $zipMaxBytes])
     @endif
 @endsection

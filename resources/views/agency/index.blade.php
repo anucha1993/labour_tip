@@ -4,10 +4,10 @@
 @section('crumb', 'ข้อมูลเอเจนซี่จัดหาแรงงาน')
 
 @section('content')
-    @php $canEdit = user_is('Admin', 'MasterAdmin'); @endphp
+    @php $canEdit = user_can('agency.edit'); $canCreate = user_can('agency.create'); $canDelete = user_can('agency.delete'); @endphp
 
     <x-page-header title="เอเจนซี่" subtitle="ทั้งหมด {{ number_format($agencies->total()) }} เอเจนซี่">
-        @if ($canEdit)
+        @if ($canCreate)
             <a href="{{ route('agency.create') }}" class="btn btn-primary"><i class="mdi mdi-plus"></i> เพิ่มเอเจนซี่</a>
         @endif
     </x-page-header>
@@ -63,7 +63,7 @@
                                     @if ($canEdit)
                                         <a href="{{ route('agency.edit', $a->agency_id) }}" class="btn btn-soft btn-sm"><i class="mdi mdi-pencil"></i> แก้ไข</a>
                                     @endif
-                                    @if (user_is('MasterAdmin'))
+                                    @if ($canDelete)
                                         <x-delete-form :action="route('agency.delete', $a->agency_id)" confirm="ต้องการลบเอเจนซี่ {{ $a->agency_name }} ใช่หรือไม่?" title="ยืนยันการลบเอเจนซี่" />
                                     @endif
                                 </td>

@@ -22,7 +22,7 @@ class LabourAssistant
     private const MAX_TOOL_ROUNDS = 6;
     private const MAX_HISTORY = 20;
 
-    /** Tools that change data: offered to MasterAdmin only and re-checked when called. */
+    /** Tools that change data: offered only with permission ai.update and re-checked when called. */
     private const WRITE_TOOLS = ['propose_update', 'propose_photo_update', 'apply_update', 'cancel_update'];
 
     private ?User $actor = null;
@@ -33,7 +33,7 @@ class LabourAssistant
 
     private function canWrite(): bool
     {
-        return $this->actor !== null && $this->actor->type === 'MasterAdmin';
+        return $this->actor !== null && $this->actor->can('ai.update');
     }
 
     public function isConfigured(): bool
@@ -156,7 +156,7 @@ class LabourAssistant
     private function runTool(string $name, array $args, array &$reports): array
     {
         if (in_array($name, self::WRITE_TOOLS, true) && ! $this->canWrite()) {
-            return ['error' => 'ไม่มีสิทธิ์แก้ไขข้อมูลผ่านผู้ช่วย AI (เฉพาะ MasterAdmin เท่านั้น)'];
+            return ['error' => 'ไม่มีสิทธิ์แก้ไขข้อมูลผ่านผู้ช่วย AI (ต้องมีสิทธิ์ "แก้ไขข้อมูลแรงงานผ่านผู้ช่วย AI")'];
         }
 
         return match ($name) {
@@ -671,7 +671,7 @@ class LabourAssistant
     {
         $role = $this->actor ? role_label((string) $this->actor->type) : 'ผู้ใช้';
         $writeRules = $this->canWrite()
-            ? "10. ผู้ใช้คนนี้เป็น MasterAdmin แก้ไขข้อมูลได้ผ่าน 2 ขั้น: (ก) เมื่อถูกขอให้แก้/เปลี่ยน/อัปเดต/ปิดสถานะ/ลบค่า ให้เรียก propose_update แล้วตอบเป็นตาราง ฟิลด์ | ค่าเดิม | ค่าใหม่ พร้อมชื่อรายการ และลงท้ายว่า พิมพ์ \"ยืนยัน\" เพื่อบันทึก หรือ \"ยกเลิก\" (ข) เรียก apply_update เฉพาะเมื่อข้อความล่าสุดของผู้ใช้เป็นการยืนยันชัดเจน (ยืนยัน/ตกลง/ใช่ บันทึกเลย) ห้ามเรียก apply_update ในรอบเดียวกับ propose_update เด็ดขาด ถ้าผู้ใช้แก้รายละเอียดให้ propose_update ใหม่ หลังบันทึกให้สรุปสิ่งที่เปลี่ยนและบอกว่าดูประวัติได้ในหน้าประวัติการแก้ไข ถ้าต้องการแก้ตามไฟล์เอกสาร ให้ read_labour_document ก่อนแล้วค่อย propose_update ด้วยค่าที่อ่านได้"
+            ? "10. ผู้ใช้คนนี้มีสิทธิ์แก้ไขข้อมูล แก้ไขข้อมูลได้ผ่าน 2 ขั้น: (ก) เมื่อถูกขอให้แก้/เปลี่ยน/อัปเดต/ปิดสถานะ/ลบค่า ให้เรียก propose_update แล้วตอบเป็นตาราง ฟิลด์ | ค่าเดิม | ค่าใหม่ พร้อมชื่อรายการ และลงท้ายว่า พิมพ์ \"ยืนยัน\" เพื่อบันทึก หรือ \"ยกเลิก\" (ข) เรียก apply_update เฉพาะเมื่อข้อความล่าสุดของผู้ใช้เป็นการยืนยันชัดเจน (ยืนยัน/ตกลง/ใช่ บันทึกเลย) ห้ามเรียก apply_update ในรอบเดียวกับ propose_update เด็ดขาด ถ้าผู้ใช้แก้รายละเอียดให้ propose_update ใหม่ หลังบันทึกให้สรุปสิ่งที่เปลี่ยนและบอกว่าดูประวัติได้ในหน้าประวัติการแก้ไข ถ้าต้องการแก้ตามไฟล์เอกสาร ให้ read_labour_document ก่อนแล้วค่อย propose_update ด้วยค่าที่อ่านได้"
             : '10. ผู้ใช้คนนี้ไม่มีสิทธิ์แก้ไขข้อมูลผ่าน AI ถ้าถูกขอให้แก้/เปลี่ยน/ลบข้อมูล ให้ตอบสั้นๆ ว่าแก้ผ่าน AI ได้เฉพาะบัญชี MasterAdmin และแนะนำให้แก้ในหน้าฟอร์มแทน แล้วเสนอช่วยค้นหา/ตรวจสอบข้อมูลที่เกี่ยวข้องแทน';
         $columns = implode(', ', array_map(fn ($k, $v) => "$k=$v[0]", array_keys(LabourQueryService::columns()), LabourQueryService::columns()));
 

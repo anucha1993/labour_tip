@@ -4,6 +4,7 @@
         $map = ['job' => ['success', 'ทำงาน'], 'resign' => ['secondary', 'ลาออก'], 'escape' => ['danger', 'หลบหนี']];
     } elseif ($type === 'role') {
         $map = ['MasterAdmin' => ['danger', 'MasterAdmin'], 'Admin' => ['primary', 'Admin'], 'Member' => ['info', 'Member']];
+        if ($value && ! isset($map[$value])) { $map[$value] = ['warning', $value]; }
     } else {
         $map = ['enable' => ['success', 'เปิดใช้งาน'], 'disable' => ['secondary', 'ปิดใช้งาน']];
     }

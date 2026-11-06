@@ -58,7 +58,7 @@
             <div class="chat-empty" id="chatEmpty">
                 <div class="big"><i class="mdi mdi-robot"></i></div>
                 <h5>สวัสดี {{ auth()->user()->name }}</h5>
-                <p class="text-2">ผมอ่านข้อมูลจากระบบโดยตรง อ่านไฟล์เอกสารที่อัปโหลดไว้หรือไฟล์ที่แนบมากับคำถามได้{{ auth()->user()->type === 'MasterAdmin' ? ' และแก้ไขข้อมูลให้ได้หลังคุณยืนยัน' : '' }} ลองถามแบบนี้ได้เลย</p>
+                <p class="text-2">ผมอ่านข้อมูลจากระบบโดยตรง อ่านไฟล์เอกสารที่อัปโหลดไว้หรือไฟล์ที่แนบมากับคำถามได้{{ user_can('ai.update') ? ' และแก้ไขข้อมูลให้ได้หลังคุณยืนยัน' : '' }} ลองถามแบบนี้ได้เลย</p>
                 <div class="chips justify-content-center" id="chatSuggestions">
                     @foreach ($suggestions as $s)
                         <button type="button" data-suggest>{{ $s }}</button>

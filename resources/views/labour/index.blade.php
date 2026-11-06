@@ -4,11 +4,13 @@
 @section('crumb', 'ข้อมูลแรงงานต่างด้าว')
 
 @section('content')
-    @php $canEdit = user_is('Admin', 'MasterAdmin'); $canDelete = user_is('MasterAdmin'); @endphp
+    @php $canEdit = user_can('labour.edit'); $canCreate = user_can('labour.create'); $canImport = user_can('labour.import'); $canDelete = user_can('labour.delete'); @endphp
 
     <x-page-header title="ข้อมูลแรงงานต่างด้าว" subtitle="ทั้งหมด {{ number_format($labours->total()) }} รายการตามเงื่อนไขที่เลือก">
-        @if ($canEdit)
+        @if ($canCreate)
             <a href="{{ route('labour.create') }}" class="btn btn-primary"><i class="mdi mdi-plus"></i> เพิ่มแรงงาน</a>
+        @endif
+        @if ($canImport)
             <a href="{{ route('labour.importform') }}" class="btn btn-soft-success"><i class="mdi mdi-file-excel"></i> นำเข้าจาก Excel</a>
         @endif
         <a href="{{ asset('file/from-import.xlsx') }}" class="btn btn-soft" download data-no-loader><i class="mdi mdi-download"></i> ฟอร์มกรอกข้อมูล</a>

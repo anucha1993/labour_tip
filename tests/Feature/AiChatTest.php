@@ -25,6 +25,7 @@ class AiChatTest extends TestCase
         config(['database.connections.testing_sqlite' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
         config(['database.default' => 'testing_sqlite']);
         config(['services.openai.key' => 'test-key', 'services.openai.model' => 'gpt-test', 'services.openai.base_url' => 'https://api.openai.com/v1', 'services.openai.datacorp' => false]);
+        config(['services.openai.retries' => 2, 'services.openai.retry_delay_ms' => 0]); // retry instantly in tests
         config(['services.google.vision_key' => '', 'services.google.translate_key' => '']); // no Google Vision unless a test enables it
         DB::purge('testing_sqlite');
 
@@ -294,7 +295,7 @@ class AiChatTest extends TestCase
 
         $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'เปลี่ยนวันหมดอายุวีซ่า A1'])->assertOk();
         Http::assertSent(fn ($r) => ! in_array('propose_update', array_column(array_column($r->data()['tools'] ?? [], 'function'), 'name'), true));
-        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], 'MasterAdmin'));
+        Http::assertSent(fn ($r) => ($t = collect($r->data()['messages'] ?? [])->firstWhere('role', 'tool')) && str_contains($t['content'], 'ไม่มีสิทธิ์แก้ไขข้อมูลผ่านผู้ช่วย AI'));
         $this->assertSame(now()->addDays(10)->toDateString(), LabourModel::find(1)->labour_visa_date_end);
 
         $this->actingAs($master)->postJson(route('ai.message'), ['message' => 'แก้ A1: วีซ่าหมด 15/01/2031 ย้ายไปบริษัทแสงลิน เพศหญิง สถานะลาออก 1/11/2569'])->assertOk();
@@ -444,7 +445,7 @@ class AiChatTest extends TestCase
             ->push($this->openAiReply(['role' => 'assistant', 'content' => null, 'tool_calls' => [
                 ['id' => 'c1', 'type' => 'function', 'function' => ['name' => 'count_labours', 'arguments' => '{}']]]]))
             ->push($this->openAiReply(['role' => 'assistant', 'content' => 'มีทั้งหมด **4 คน**']))
-            ->push(['error' => ['message' => 'boom']], 500),
+            ->push(['error' => ['message' => 'boom']], 400),
         ]);
         DB::table('users')->insert(['id' => 7, 'name' => 'Tester', 'type' => 'Member']);
 
@@ -552,6 +553,36 @@ class AiChatTest extends TestCase
     }
 
     /** Separate test: the route's controller instance is cached per app, so the key must be unset before the first call. */
+    public function test_a_busy_api_is_retried_and_then_reported_in_thai()
+    {
+        // One fake for the whole test (Http::fake stubs merge, and an exhausted sequence would answer first).
+        $busy = ['error' => ['message' => 'AI service is busy — please retry shortly']];
+        $script = [
+            [$busy, 503, ['Retry-After' => '0']], [$busy, 503, []], [$this->openAiReply(['role' => 'assistant', 'content' => 'สวัสดีครับ']), 200, []], // question 1
+            [$busy, 503, []], [$busy, 503, []], [$busy, 503, []],                                                                             // question 2
+            [['error' => ['message' => 'bad request']], 400, []],                                                                           // question 3
+        ];
+        $n = 0;
+        Http::fake(['api.openai.com/*' => function () use (&$n, $script) {
+            [$body, $status, $headers] = $script[$n++] ?? [['error' => ['message' => 'too many calls']], 418, []];
+
+            return Http::response($body, $status, $headers);
+        }]);
+
+        // DataCorp answers 503 "AI service is busy" twice, then the real reply: the user never sees the 503.
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'สวัสดี'])->assertOk()->assertJsonPath('answer', 'สวัสดีครับ');
+        $this->assertSame(3, $n);
+
+        // Still busy after every retry: a Thai message that says so, logged as an error.
+        $res = $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'ยังยุ่งอยู่ไหม'])->assertStatus(502);
+        $this->assertStringContainsString('บริการ AI มีผู้ใช้งานมากหรือขัดข้องชั่วคราว (HTTP 503, ลองซ้ำให้แล้ว 2 ครั้ง)', $res->json('error'));
+        $this->assertSame(6, $n);
+
+        // A plain client error (400) is not retried.
+        $this->actingAs($this->user())->postJson(route('ai.message'), ['message' => 'x'])->assertStatus(502)->assertJsonFragment(['error' => 'OpenAI API error (400): bad request']);
+        $this->assertSame(7, $n);
+    }
+
     public function test_missing_api_key_gives_a_clear_503()
     {
         config(['services.openai.key' => null]);

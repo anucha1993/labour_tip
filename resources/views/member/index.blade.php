@@ -6,6 +6,7 @@
 @section('content')
     <x-page-header title="สมาชิก / ผู้ใช้งาน" subtitle="ทั้งหมด {{ number_format($users->total()) }} บัญชี">
         <a href="{{ route('register') }}" class="btn btn-primary"><i class="mdi mdi-account-plus"></i> เพิ่มสมาชิก</a>
+        @can('admin.roles')<a href="{{ route('roles.index') }}" class="btn btn-soft"><i class="mdi mdi-shield-account"></i> โปรไฟล์สิทธิ์</a>@endcan
     </x-page-header>
 
     <div class="card">
@@ -31,7 +32,7 @@
                         <th style="width:48px">#</th>
                         <th>ชื่อ-สกุล</th>
                         <th>อีเมล</th>
-                        <th>สิทธิ์การใช้งาน</th>
+                        <th>โปรไฟล์สิทธิ์</th>
                         <th>สถานะ</th>
                         <th>สร้างเมื่อ</th>
                         <th class="td-actions"></th>
@@ -102,10 +103,10 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label required" for="edit_type">ระดับการใช้งาน</label>
+                        <label class="form-label required" for="edit_type">โปรไฟล์สิทธิ์</label>
                         <select class="form-select" name="type" id="edit_type" required>
                             @foreach ($roles as $r)
-                                <option value="{{ $r }}">{{ $r }} — {{ role_label($r) }}</option>
+                                <option value="{{ $r['key'] }}">{{ $r['key'] }} — {{ $r['name'] }}</option>
                             @endforeach
                         </select>
                     </div>

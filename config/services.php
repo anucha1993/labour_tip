@@ -48,6 +48,9 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        // extra attempts when the API is busy (429/5xx) or the connection drops; waits 1 s, 2 s, 4 s … × delay
+        'retries' => (int) env('OPENAI_RETRIES', 2),
+        'retry_delay_ms' => (int) env('OPENAI_RETRY_DELAY_MS', 1000),
         // retouch photos in the AI chat (POST /images/edits)
         'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
         'image_timeout' => (int) env('OPENAI_IMAGE_TIMEOUT', 240),

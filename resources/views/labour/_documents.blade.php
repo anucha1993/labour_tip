@@ -1,7 +1,7 @@
 {{-- Document rows: existing documents (table) + dynamic rows for new uploads. Expects: $labour --}}
 @php
     $existing = $labour->exists ? $labour->documentList() : collect();
-    $canDeleteFile = user_is('MasterAdmin');
+    $canDeleteFile = user_can('documents.delete');
     $oldRows = collect(old('documents', []))->filter(fn ($r) => trim((string) ($r['name'] ?? '')) !== '');
 @endphp
 

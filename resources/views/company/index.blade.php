@@ -4,10 +4,10 @@
 @section('crumb', 'ข้อมูลบริษัทและนายจ้าง')
 
 @section('content')
-    @php $canEdit = user_is('Admin', 'MasterAdmin'); @endphp
+    @php $canEdit = user_can('company.edit'); $canCreate = user_can('company.create'); $canDelete = user_can('company.delete'); @endphp
 
     <x-page-header title="บริษัท / นายจ้าง" subtitle="ทั้งหมด {{ number_format($companies->total()) }} บริษัท">
-        @if ($canEdit)
+        @if ($canCreate)
             <a href="{{ route('company.create') }}" class="btn btn-primary"><i class="mdi mdi-plus"></i> เพิ่มบริษัท</a>
         @endif
     </x-page-header>
@@ -74,7 +74,7 @@
                                     @if ($canEdit)
                                         <a href="{{ route('company.edit', $c->company_id) }}" class="btn btn-soft btn-sm" title="แก้ไข"><i class="mdi mdi-pencil"></i> แก้ไข</a>
                                     @endif
-                                    @if (user_is('MasterAdmin'))
+                                    @if ($canDelete)
                                         <x-delete-form :action="route('company.delete', $c->company_id)" confirm="ต้องการลบบริษัท {{ $c->company_name }} ใช่หรือไม่?" title="ยืนยันการลบบริษัท" />
                                     @endif
                                 </td>

@@ -29,8 +29,8 @@
                     </div>
                     <div class="form-text mb-3 mt-n2">รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</div>
 
-                    <x-form.select name="type" label="ระดับการใช้งาน" :value="old('type', 'Member')" required
-                        :options="['Member' => 'Member — ดูข้อมูลและออกรายงาน', 'Admin' => 'Admin — เพิ่ม/แก้ไขข้อมูล', 'MasterAdmin' => 'MasterAdmin — สิทธิ์ทั้งหมด รวมถึงลบและจัดการสมาชิก']" />
+                    <x-form.select name="type" label="โปรไฟล์สิทธิ์" :value="old('type', 'Member')" required
+                        :options="collect(\App\Support\Permissions::roles())->mapWithKeys(fn ($r) => [$r['key'] => $r['key'] . ' — ' . $r['name'] . ($r['description'] ? ' (' . $r['description'] . ')' : '')])->all()" />
 
                     <div class="mb-2">
                         <label class="form-label required d-block">สถานะการใช้งาน</label>

@@ -147,25 +147,43 @@ if (! function_exists('enable_label')) {
 }
 
 if (! function_exists('role_label')) {
+    /** Thai name of a role (from the roles table, else the built-in names). */
     function role_label($type): string
     {
-        return [
-            'MasterAdmin' => 'ผู้ดูแลระบบสูงสุด',
-            'Admin' => 'ผู้ดูแลระบบ',
-            'Member' => 'สมาชิก',
-        ][$type] ?? ($type ?: '-');
+        return \App\Support\Permissions::roleName($type !== null ? (string) $type : null);
     }
 }
 
 if (! function_exists('user_is')) {
     /**
-     * user_is('MasterAdmin') or user_is('Admin', 'MasterAdmin').
+     * user_is('MasterAdmin') or user_is('Admin', 'MasterAdmin'). Prefer user_can(): roles are editable now.
      */
     function user_is(string ...$roles): bool
     {
         $user = auth()->user();
 
         return $user !== null && in_array($user->type, $roles, true);
+    }
+}
+
+if (! function_exists('user_can')) {
+    /**
+     * user_can('labour.edit') or user_can('labour.view', 'documents.view') (any of them).
+     * Keys are listed in App\Support\Permissions; MasterAdmin always passes.
+     */
+    function user_can(string ...$permissions): bool
+    {
+        $user = auth()->user();
+        if ($user === null) {
+            return false;
+        }
+        foreach ($permissions as $permission) {
+            if ($user->can($permission)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

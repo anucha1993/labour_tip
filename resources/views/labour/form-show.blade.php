@@ -5,7 +5,7 @@
 
 @section('content')
     @php
-        $canEdit = user_is('Admin', 'MasterAdmin');
+        $canEdit = user_can('labour.edit');
         $documents = $labour->documentList();
         $docs = [
             ['icon' => 'mdi-book-open-page-variant', 'title' => 'หนังสือเดินทาง', 'number' => $labour->labour_passport_number,
@@ -27,7 +27,7 @@
         @if ($canEdit)
             <a href="{{ route('labour.edit', $labour->labour_id) }}" class="btn btn-primary"><i class="mdi mdi-pencil"></i> แก้ไข</a>
         @endif
-        @if (user_is('MasterAdmin'))
+        @if (user_can('labour.delete'))
             <x-delete-form :action="route('labour.delete', $labour->labour_id)" size="" confirm="ต้องการลบข้อมูลแรงงาน {{ $labour->labour_fullname }} ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้" title="ยืนยันการลบแรงงาน">ลบ</x-delete-form>
         @endif
         <a href="{{ route('labour.index') }}" class="btn btn-soft"><i class="mdi mdi-arrow-left"></i> กลับ</a>
