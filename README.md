@@ -34,6 +34,22 @@ Laravel 8 · PHP 8.x · MySQL · Bootstrap 5.3 (local copy in `public/vendor/boo
 
 `app/Support/Permissions.php` (รายการสิทธิ์ + ค่าเริ่มต้น + อ่านตาราง), `app/Providers/AuthServiceProvider.php` (Gate), `app/Http/Middleware/CheckPermission.php` (alias `perm`), `app/Http/Controllers/member/RoleController.php` + `resources/views/roles/index.blade.php` (หน้า UI), helper `user_can()` ใน `app/Support/helpers.php`, migration `2026_11_06_000001_create_roles_tables.php`, เทสต์ `tests/Feature/RolePermissionTest.php`
 
+## Dashboard วิเคราะห์ข้อมูล (`/dashboard`)
+
+เมนู **Dashboard** แยกจากหน้าแรก (หน้าแรกยังเป็นแจ้งเตือนเอกสารใกล้หมดอายุเหมือนเดิม) ต้องมีสิทธิ์ `analytics.view` (Admin/MasterAdmin โดยค่าเริ่มต้น migration `2026_11_06_000002`) ตัวกรองบริษัทและช่วงเวลา 6/12/24 เดือน ตัวเลขคำนวณใน `app/Services/AnalyticsService.php` (SQL ล้วน รองรับ MySQL และ SQLite) cache 10 นาทีต่อชุดตัวกรอง กราฟใช้ Chart.js 4 จาก cdnjs โหลดเฉพาะหน้านี้ สีตามประเภทเอกสาร (วีซ่าน้ำเงิน พาสปอร์ตม่วง ใบอนุญาตส้ม 90 วันเขียว) กดที่กราฟ/การ์ดไปหน้ารายชื่อที่กรองไว้แล้ว
+
+1. ปริมาณงานต่ออายุล่วงหน้า (แท่งซ้อนรายเดือน 4 ประเภท เฉพาะคนทำงานอยู่)
+2. เอกสารหมดอายุแล้วแต่ยังทำงานอยู่ (การ์ดแดง 4 ใบ + จำนวนที่เลยกำหนดใน 30 วันล่าสุด)
+3. บริษัทที่ต้องตามงาน (ตาราง heat cell: ใกล้หมดอายุตาม threshold ตั้งค่า, เลยกำหนด, หลบหนีสะสม, ไม่มีรูป, ไฟล์/คน) ซ่อนเมื่อเลือกบริษัทเดียว
+4. ความครบถ้วนของข้อมูล (progress bar ต่อฟิลด์ เรียงจากขาดมากสุด)
+5. แนวโน้มกำลังคน (เส้น เข้าใหม่/ลาออก/หลบหนี ต่อเดือน + เส้นประคนทำงาน ณ สิ้นเดือน)
+6. สัดส่วนสัญชาติ เพศ ช่วงอายุ (แท่งแนวนอน + โดนัทเพศ)
+7. อัตราหลบหนีต่อเอเจนซี่ (แท่งแนวนอน % สีตามระดับ 7/15%)
+8. อายุงานเฉลี่ยรายบริษัท (เดือน เฉพาะบริษัทที่มี 5 คนขึ้นไป)
+9. การใช้งานระบบ 30 วัน (แก้ไข/ถาม AI รายวัน + ผู้แก้ไขสูงสุด) เห็นเฉพาะผู้มีสิทธิ์ `admin.logs`
+
+เทสต์ `tests/Feature/AnalyticsTest.php`
+
 ## ผู้ช่วย AI และประวัติการใช้งาน
 
 - หน้าแชท `/ai-chat` (ทุกสิทธิ์) ใช้ OpenAI ผ่าน `app/Services/Ai/LabourAssistant.php` + `LabourQueryService.php` (อ่านข้อมูลอย่างเดียว รวมรายการไฟล์เอกสารพร้อมลิงก์เปิด)

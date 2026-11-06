@@ -51,6 +51,11 @@
                     <span class="sb-badge" title="เอกสารใกล้หมดอายุ">{{ $expiryTotal > 999 ? '999+' : $expiryTotal }}</span>
                 @endif
             </a>
+            @can('analytics.view')
+            <a href="{{ route('analytics.index') }}" class="sb-link {{ request()->routeIs('analytics.*') ? 'active' : '' }}">
+                <i class="mdi mdi-chart-areaspline"></i><span class="label">Dashboard</span>
+            </a>
+            @endcan
             @can('labour.view')
             <a href="{{ route('labour.index') }}" class="sb-link {{ request()->routeIs('labour.*') || request()->routeIs('import-excel.*') ? 'active' : '' }}">
                 <i class="mdi mdi-account-multiple"></i><span class="label">แรงงานต่างด้าว</span>

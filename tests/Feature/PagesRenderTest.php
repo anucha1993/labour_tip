@@ -41,7 +41,7 @@ class PagesRenderTest extends TestCase
         $this->actingAs($this->user('MasterAdmin'));
 
         $pages = [
-            '/', '/totalnotify',
+            '/', '/totalnotify', '/dashboard', '/dashboard?months=6', '/dashboard?company=1&months=24',
             '/labour', '/labour?keyword=a&labour_status_job=job&column_name_type=labour_visa_date_end&start_date=2020-01-01&end_date=2030-01-01&per_page=25',
             '/labour/form-add', '/import/labour/form',
             '/company', '/company?keyword=x&status=enable', '/company/form-add',

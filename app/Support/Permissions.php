@@ -57,6 +57,9 @@ class Permissions
             'report' => ['label' => 'รายงาน', 'icon' => 'mdi-file-chart', 'items' => [
                 'report.view' => ['ดู / ส่งออก', 'ออกรายงานและส่งออก Excel/PDF (รวมรายการเอกสารใกล้หมดอายุ)'],
             ]],
+            'analytics' => ['label' => 'Dashboard', 'icon' => 'mdi-chart-areaspline', 'items' => [
+                'analytics.view' => ['ดู', 'หน้า Dashboard วิเคราะห์ข้อมูล (ปริมาณงานต่ออายุ เอกสารเลยกำหนด เปรียบเทียบบริษัท แนวโน้มกำลังคน)'],
+            ]],
             'documents' => ['label' => 'คลังเอกสาร', 'icon' => 'mdi-folder', 'items' => [
                 'documents.view' => ['ดู', 'เปิดคลังเอกสารและดูไฟล์'],
                 'documents.download' => ['ดาวน์โหลด zip', 'ดาวน์โหลดเป็น zip (เลือกหลายรายการ)'],
@@ -132,7 +135,7 @@ class Permissions
             'company.create', 'company.edit',
             'agency.create', 'agency.edit',
             'documents.upload', 'documents.rename', 'documents.share',
-            'admin.settings',
+            'admin.settings', 'analytics.view',
         ]);
 
         return match ($role) {

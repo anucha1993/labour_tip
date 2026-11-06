@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActionLogController;
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\agency\AgencyController;
 use App\Http\Controllers\ai\AiChatController;
 use App\Http\Controllers\ai\AiChatLogController;
@@ -58,6 +59,7 @@ Route::middleware('auth')->group(function () {
 
     // ---------------------------------------------------------------- Dashboard
     Route::get('/', [NotificationController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [AnalyticsController::class, 'index'])->name('analytics.index')->middleware('perm:analytics.view');
     Route::get('/home', fn () => redirect()->route('dashboard'))->name('home');
     Route::get('/totalnotify', [NotificationController::class, 'notify'])->name('dashboard.notify');
 
