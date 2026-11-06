@@ -79,7 +79,7 @@ class Permissions
             'users' => ['label' => 'สมาชิก / ผู้ใช้งาน', 'icon' => 'mdi-account-key', 'items' => [
                 'admin.users' => ['จัดการ', 'เพิ่ม แก้ไข ลบสมาชิก และเปลี่ยนโปรไฟล์สิทธิ์ของสมาชิก'],
             ]],
-            'roles' => ['label' => 'โปรไฟล์สิทธิ์', 'icon' => 'mdi-shield-account', 'items' => [
+            'roles' => ['label' => 'โปรไฟล์สิทธิ์', 'icon' => 'mdi-security', 'items' => [
                 'admin.roles' => ['จัดการ', 'สร้างโปรไฟล์และกำหนดสิทธิ์ (หน้านี้)'],
             ]],
             'logs' => ['label' => 'ประวัติการแก้ไข', 'icon' => 'mdi-history', 'items' => [

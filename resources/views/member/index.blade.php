@@ -6,7 +6,7 @@
 @section('content')
     <x-page-header title="สมาชิก / ผู้ใช้งาน" subtitle="ทั้งหมด {{ number_format($users->total()) }} บัญชี">
         <a href="{{ route('register') }}" class="btn btn-primary"><i class="mdi mdi-account-plus"></i> เพิ่มสมาชิก</a>
-        @can('admin.roles')<a href="{{ route('roles.index') }}" class="btn btn-soft"><i class="mdi mdi-shield-account"></i> โปรไฟล์สิทธิ์</a>@endcan
+        @can('admin.roles')<a href="{{ route('roles.index') }}" class="btn btn-soft"><i class="mdi mdi-security"></i> โปรไฟล์สิทธิ์</a>@endcan
     </x-page-header>
 
     <div class="card">

@@ -37,7 +37,7 @@
                 <div class="list-group list-group-flush" id="profileList">
                     @foreach ($roles as $r)
                         <a href="{{ route('roles.index', $r['key']) }}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ $r['key'] === $current['key'] ? 'active' : '' }}">
-                            <i class="mdi {{ $r['key'] === $master ? 'mdi-shield-crown' : ($r['is_system'] ? 'mdi-shield-account' : 'mdi-shield-account-outline') }} fs-5"></i>
+                            <i class="mdi {{ $r['key'] === $master ? 'mdi-security' : ($r['is_system'] ? 'mdi-security' : 'mdi-shield-outline') }} fs-5"></i>
                             <span class="flex-grow-1 text-truncate">
                                 <span class="d-block fw-name">{{ $r['name'] }}</span>
                                 <span class="sub">{{ $r['key'] }} · {{ number_format($r['users']) }} คน · {{ count($r['permissions']) }}/{{ $total }}</span>
@@ -124,7 +124,7 @@
         <div class="modal-dialog">
             <form method="POST" action="{{ route('roles.store') }}" class="modal-content">
                 @csrf
-                <div class="modal-header"><h5 class="modal-title" id="roleAddTitle"><i class="mdi mdi-shield-plus"></i> สร้างโปรไฟล์ใหม่</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button></div>
+                <div class="modal-header"><h5 class="modal-title" id="roleAddTitle"><i class="mdi mdi-account-key"></i> สร้างโปรไฟล์ใหม่</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button></div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label required" for="role_key">รหัสโปรไฟล์ (อังกฤษ)</label>

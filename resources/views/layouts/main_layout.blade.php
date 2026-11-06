@@ -98,7 +98,7 @@
             @endcan
             @can('admin.roles')
                 <a href="{{ route('roles.index') }}" class="sb-link {{ request()->routeIs('roles.*') ? 'active' : '' }}">
-                    <i class="mdi mdi-shield-account"></i><span class="label">โปรไฟล์สิทธิ์</span>
+                    <i class="mdi mdi-security"></i><span class="label">โปรไฟล์สิทธิ์</span>
                 </a>
             @endcan
             @can('admin.logs')
